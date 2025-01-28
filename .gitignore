@@ -1,0 +1,5 @@
+### `.gitignore`
+
+# Ignore object files and executables in the src directory
+src/*.o
+src/*.exe

@@ -8,22 +8,26 @@
 class Lexer {
 private:
     std::string input;
-    size_t currentPos;         // Current position in input
-    char currentChar;          // Current character being analyzed
+    size_t currentPos;
+    char currentChar;
 
-    // Internal helper methods
-    void advance();            // Advances to the next character
-    bool isAlpha(char c);      // Check if character is alphabetic
-    bool isDigit(char c);      // Check if character is a digit
-    Token parseLet();          // Parse 'Let it be known'
-    Token parseNamed();        // Parse 'a number named'
-    Token parseIsOf();         // Parse 'is of'
-    Token parseIdentifier();   // Parse identifiers
-    Token parseNumber();       // Parse numbers
-
+    void advance();
+    bool isAlpha(char c);
+    bool isDigit(char c);
+    Token parseLet();
+    Token parseNamed();
+    Token parseIsOf();
+    Token parseIdentifier();
+    Token parseNumber();
+    Token parseString();
+    Token parseDecreeElders();
+    Token parseSpellNamed();
+    Token parseIsCastUpon();
+    Token parseLetProclaimed();
+    
 public:
-    Lexer(const std::string& input);  // Constructor declaration
-    std::vector<Token> tokenize();    // Tokenize the input string
+    Lexer(const std::string& input);
+    std::vector<Token> tokenize();
 };
 
 #endif
