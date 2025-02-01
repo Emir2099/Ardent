@@ -1,7 +1,8 @@
 #include <iostream>
+#include "lexer.h"
+#include "parser.h"
 #include <vector>
 #include "token.h"
-#include "lexer.h"
 
 int main() {
     std::string input = R"(
@@ -13,10 +14,18 @@ int main() {
     )";
 
     Lexer lexer(input);
-    auto tokens = lexer.tokenize();
+    std::vector<Token> tokens = lexer.tokenize();
 
-    for (const auto& token : tokens) {
-        std::cout << token.getValue() << " : " 
-                  << tokenTypeToString(token.getType()) << "\n";
-    }
+    Parser parser(tokens);
+    auto ast = parser.parse();
+
+    //     auto tokens = lexer.tokenize();
+
+    // for (const auto& token : tokens) {
+    //     std::cout << token.getValue() << " : " 
+    //               << tokenTypeToString(token.getType()) << "\n";
+
+
+    std::cout << "Parsing complete!" << std::endl;
+    return 0;
 }
