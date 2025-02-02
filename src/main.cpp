@@ -1,31 +1,41 @@
 #include <iostream>
 #include "lexer.h"
 #include "parser.h"
+#include "interpreter.h"
+#include <memory>
 #include <vector>
-#include "token.h"
 
 int main() {
     std::string input = R"(
+        Let it be known throughout the land, a number named age is of 12 winters.
         Should the fates decree that age surpasseth 18, 
         then let it be proclaimed: "Thou art of age."
         Else whisper: "Nay."
-        By decree of the elders, a spell named greet is cast upon name:
-            "Hail " + name + "!"
     )";
 
     Lexer lexer(input);
     std::vector<Token> tokens = lexer.tokenize();
 
+    std::cout << "=== Tokens Generated ===" << std::endl;
+    for (const auto& token : tokens) {
+        std::cout << "Token: " << token.value << ", Type: " << tokenTypeToString(token.type) << std::endl;
+    }
+
     Parser parser(tokens);
     auto ast = parser.parse();
+if (!ast) {
+    std::cerr << "Error: Parser returned NULL AST!" << std::endl;
+    return 1;
+}
 
-    //     auto tokens = lexer.tokenize();
+std::cout << "=== AST Debug Output ===" << std::endl;
+std::cout << typeid(*ast).name() << std::endl;  // Print AST node type
 
-    // for (const auto& token : tokens) {
-    //     std::cout << token.getValue() << " : " 
-    //               << tokenTypeToString(token.getType()) << "\n";
+std::cout << "Parsing complete!" << std::endl;
 
 
-    std::cout << "Parsing complete!" << std::endl;
+    Interpreter interpreter;
+    interpreter.execute(ast);
+
     return 0;
 }
