@@ -8,7 +8,7 @@ enum class TokenType {
     LET, ERROR, IDENTIFIER, NUMBER, STRING, OPERATOR, 
     NAMED, IS_OF, SHOULD, FATES, DECREE, SURPASSETH, 
     THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, 
-    COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END
+    COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -32,6 +32,10 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::COMPARISON_OP: return "COMPARISON_OP";
         case TokenType::ELSE: return "ELSE";
         case TokenType::LET_PROCLAIMED: return "LET_PROCLAIMED";
+        case TokenType::WHILST: return "WHILST";
+        case TokenType::REMAINETH: return "REMAINETH";
+        case TokenType::SPOKEN: return "SPOKEN";
+        case TokenType::ASCEND: return "ASCEND";
         default: return "UNKNOWN";
     }
 }

@@ -13,6 +13,8 @@ public:
     void evaluateExpression(std::shared_ptr<ASTNode> expr);
     void assignVariable(std::string name, int value);
     int getVariable(std::string name);
+    void executeWhileLoop(std::shared_ptr<WhileLoop> loop);
+
 };
 
 #endif

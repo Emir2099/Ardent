@@ -190,6 +190,30 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 20) == "let it be proclaimed") {
             tokens.push_back(parseLetProclaimed());
         }
+        else if (input.substr(currentPos, 24) == "Whilst the sun doth rise") {
+            tokens.push_back(Token(TokenType::WHILST, "Whilst the sun doth rise"));
+            currentPos += 24;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        } 
+        else if (input.substr(currentPos, 15) == "remaineth below") {
+            tokens.push_back(Token(TokenType::REMAINETH, "remaineth below"));
+            currentPos += 15;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        } 
+        else if (input.substr(currentPos, 30) == "so shall these words be spoken") {
+            tokens.push_back(Token(TokenType::SPOKEN, "so shall these words be spoken"));
+            currentPos += 30;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        } 
+        else if (input.substr(currentPos, 36) == "And with each dawn, let count ascend") {
+            tokens.push_back(Token(TokenType::ASCEND, "And with each dawn, let count ascend"));
+            currentPos += 36;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        } 
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());

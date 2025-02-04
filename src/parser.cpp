@@ -138,6 +138,30 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     );
 }
 
+// 🔹 Parse a while loop
+std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
+    Token loopVar = consume(TokenType::IDENTIFIER, "Expected loop variable after 'Whilst the sun doth rise'");
+    consume(TokenType::REMAINETH, "Expected 'remaineth below'");
+    Token limit = consume(TokenType::NUMBER, "Expected numeric limit after 'remaineth below'");
+    consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken'");
+
+    std::vector<std::shared_ptr<ASTNode>> body;
+    while (!match(TokenType::ASCEND)) {  // Stop when we reach "And with each dawn..."
+        body.push_back(parseExpression());
+    }
+
+    consume(TokenType::IDENTIFIER, "Expected 'let count ascend' after loop body");
+    Token step = consume(TokenType::NUMBER, "Expected increment value after 'let count ascend'");
+
+    return std::make_shared<WhileLoop>(
+        std::make_shared<Expression>(loopVar),
+        std::make_shared<Expression>(limit),
+        std::make_shared<Expression>(step),
+        body
+    );
+}
+
+
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {
     if (match(TokenType::LET)) {
@@ -146,7 +170,9 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseIfStatement();
     } else if (match(TokenType::SPELL_NAMED)) {
         return parseFunctionCall();
-    } else if (match(TokenType::LET_PROCLAIMED)) {
+    } else if (match(TokenType::WHILST)) {  // Detects while loop
+        return parseWhileLoop();
+    }   else if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
     } else {

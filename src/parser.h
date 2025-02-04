@@ -23,6 +23,7 @@ private:
     std::shared_ptr<ASTNode> parseFunctionCall();
     std::shared_ptr<ASTNode> parseVariableDeclaration();
     std::shared_ptr<ASTNode> parseStatement();
+    std::shared_ptr<ASTNode> parseWhileLoop();
 
 public:
     Parser(std::vector<Token> tokens);

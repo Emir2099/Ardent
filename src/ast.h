@@ -51,12 +51,25 @@ public:
         : statements(statements) {}
 };
 
-// NEW: Represents a print statement (e.g., when a "let it be proclaimed" is used)
+// Represents a print statement (e.g., when a "let it be proclaimed" is used)
 class PrintStatement : public ASTNode {
 public:
     std::shared_ptr<ASTNode> expression;
     PrintStatement(std::shared_ptr<ASTNode> expression)
         : expression(expression) {}
+};
+
+// Represents a while loop
+class WhileLoop : public ASTNode {
+public:
+    std::shared_ptr<Expression> loopVar;
+    std::shared_ptr<Expression> limit;
+    std::shared_ptr<Expression> step;
+    std::vector<std::shared_ptr<ASTNode>> body;
+
+    WhileLoop(std::shared_ptr<Expression> loopVar, std::shared_ptr<Expression> limit,
+              std::shared_ptr<Expression> step, std::vector<std::shared_ptr<ASTNode>> body)
+        : loopVar(loopVar), limit(limit), step(step), body(body) {}
 };
 
 #endif

@@ -73,6 +73,31 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             std::cerr << "Error: IF condition is not a valid binary expression." << std::endl;
         }
     }
+     // 🔹 Handle while loop execution
+    else if (auto whileLoop = std::dynamic_pointer_cast<WhileLoop>(ast)) {
+        std::cout << "Executing WHILE loop..." << std::endl;
+
+        std::string loopVar = whileLoop->loopVar->token.value;
+        int limit = std::stoi(whileLoop->limit->token.value);
+        int step = std::stoi(whileLoop->step->token.value);
+
+        if (variables.find(loopVar) == variables.end()) {
+            std::cerr << "Error: Undefined loop variable '" << loopVar << "'" << std::endl;
+            return;
+        }
+
+        while (variables[loopVar] < limit) {
+            std::cout << "Loop iteration: " << variables[loopVar] << std::endl;
+
+            // 🔹 Execute loop body
+            for (const auto& stmt : whileLoop->body) {
+                execute(stmt);
+            }
+
+            variables[loopVar] += step;
+        }
+    }
+
     // Handle print statements.
     else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
         if (auto expr = std::dynamic_pointer_cast<Expression>(printStmt->expression)) {
@@ -84,9 +109,52 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     }
 }
 
+
+void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
+    if (!loop || !loop->loopVar || !loop->limit || !loop->step) {
+        std::cerr << "Error: Invalid WhileLoop AST Node" << std::endl;
+        return;
+    }
+
+    std::string varName = loop->loopVar->token.value;
+    int limit = std::stoi(loop->limit->token.value);
+    int step = std::stoi(loop->step->token.value);
+
+    if (variables.find(varName) == variables.end()) {
+        std::cerr << "Error: Undefined loop variable '" << varName << "'" << std::endl;
+        return;
+    }
+
+    std::cout << "Executing WHILE loop for variable: " << varName << " from " 
+              << variables[varName] << " to " << limit << " with step " << step << std::endl;
+
+    while (variables[varName] < limit) {
+        std::cout << "Loop iteration: " << variables[varName] << std::endl;
+
+        // ✅ Execute each statement in the loop body
+        for (const auto& stmt : loop->body) {
+            execute(stmt);
+        }
+
+        variables[varName] += step;
+    }
+}
+
+
+
 void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
+    std::cout << "Inside evaluateExpression()" << std::endl;
     if (auto value = std::dynamic_pointer_cast<Expression>(expr)) {
-        std::cout << "Evaluating expression: " << value->token.value << std::endl;
+        if (value->token.type == TokenType::IDENTIFIER) {
+            std::string varName = value->token.value;
+            if (variables.find(varName) != variables.end()) {
+                std::cout << "valueeee: " << variables[varName] << std::endl;  
+            } else {
+                std::cerr << "Error: Undefined variable '" << varName << "'" << std::endl;
+            }
+        } else {
+            std::cout << value->token.value << std::endl;
+        }
     } else {
         std::cerr << "Error: Invalid Expression Node!" << std::endl;
     }
