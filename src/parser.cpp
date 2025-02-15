@@ -192,6 +192,36 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
     );
 }
 
+
+std::shared_ptr<ASTNode> Parser::parseForLoop() {
+    // After matching "For", parse the loop variable
+    Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'For'");
+    auto loopVar = std::make_shared<Expression>(loopVarToken);
+
+    // Expect "remaineth below"
+    consume(TokenType::REMAINETH, "Expected 'remaineth below' after loop variable");
+
+    // Parse the limit (e.g., 5)
+    auto limit = parseExpression();
+
+    // Create condition: count < 5
+    Token op(TokenType::REMAINETH, "remaineth below");
+    auto condition = std::make_shared<BinaryExpression>(loopVar, op, limit);
+
+    // Parse the loop body
+    consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken'");
+    std::vector<std::shared_ptr<ASTNode>> body;
+    while (!match(TokenType::ASCEND)) {
+        auto expr = parseExpression();
+        if (expr) body.push_back(std::make_shared<PrintStatement>(expr));
+    }
+
+    // Parse the increment step (e.g., 1)
+    auto step = parseExpression();
+
+    return std::make_shared<ForLoop>(loopVar, condition, step, std::make_shared<BlockStatement>(body));
+}
+
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {
     if (match(TokenType::LET)) {
@@ -202,7 +232,10 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseFunctionCall();
     } else if (match(TokenType::WHILST)) {  // Detects while loop
         return parseWhileLoop();
-    }   else if (match(TokenType::LET_PROCLAIMED)) {
+    }  else if (match(TokenType::FOR)) {  // Handle FOR loops
+        return parseForLoop();
+    }   
+    else if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
     } else {

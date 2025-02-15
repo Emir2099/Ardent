@@ -15,6 +15,7 @@ public:
     void assignVariable(std::string name, int value);
     int getVariable(std::string name);
     void executeWhileLoop(std::shared_ptr<WhileLoop> loop);
+    void executeForLoop(std::shared_ptr<ForLoop> loop);
 
 };
 

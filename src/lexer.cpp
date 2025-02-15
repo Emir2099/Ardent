@@ -214,6 +214,12 @@ std::vector<Token> Lexer::tokenize() {
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         } 
+        else if (input.substr(currentPos, 3) == "For") {
+            tokens.push_back(Token(TokenType::FOR, "For"));
+            currentPos += 3;
+            currentChar = input[currentPos]; // Advance past "For"
+        }
+        
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());

@@ -29,7 +29,14 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
     } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
         int left = evaluateExpr(binExpr->left);
         int right = evaluateExpr(binExpr->right);
-        if (binExpr->op.value == "+") {
+        // 🔹 Handle comparison operators
+        if (binExpr->op.type == TokenType::SURPASSETH) {
+            return left > right ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::REMAINETH) {
+            return left < right ? 1 : 0;
+        }
+        // Handle arithmetic operators
+        else if (binExpr->op.value == "+") {
             return left + right;
         } else if (binExpr->op.value == "-") {
             return left - right;
@@ -132,6 +139,9 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             variables[loopVar] += step;
         }
     }
+    else if (auto forLoop = std::dynamic_pointer_cast<ForLoop>(ast)) {
+        executeForLoop(forLoop);
+    }
 
     // Handle print statements.
       // Handle print statements.
@@ -175,6 +185,23 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
     }
 }
 
+void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
+    // Initialize loop variable (e.g., count = 1)
+    std::string varName;
+    if (auto expr = std::dynamic_pointer_cast<Expression>(loop->init)) {
+        varName = expr->token.value;
+        variables[varName] = evaluateExpr(loop->init);
+    }
+
+    // Loop while condition holds (e.g., count < 5)
+    while (evaluateExpr(loop->condition)) {
+        // Execute the loop body (BlockStatement)
+        execute(loop->body);
+
+        // Increment loop variable (e.g., count += 1)
+        variables[varName] += evaluateExpr(loop->increment);
+    }
+}
 
 
 void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {

@@ -59,6 +59,18 @@ public:
         : expression(expression) {}
 };
 
+struct ForLoop : public ASTNode {
+    std::shared_ptr<ASTNode> init;   // Variable initialization
+    std::shared_ptr<ASTNode> condition;  // Condition (count < limit)
+    std::shared_ptr<ASTNode> increment;  // Step (count += 1)
+    std::shared_ptr<ASTNode> body;  // Loop body
+
+    ForLoop(std::shared_ptr<ASTNode> init, std::shared_ptr<ASTNode> condition, 
+            std::shared_ptr<ASTNode> increment, std::shared_ptr<ASTNode> body)
+        : init(init), condition(condition), increment(increment), body(body) {}
+};
+
+
 // Represents a while loop
 class WhileLoop : public ASTNode {
 public:
