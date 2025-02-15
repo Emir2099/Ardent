@@ -46,9 +46,34 @@ bool Parser::isAtEnd() {
 }
 
 // A simple parseExpression that consumes a single token.
+// Inside parser.cpp
+
 std::shared_ptr<ASTNode> Parser::parseExpression() {
-    Token token = advance();
-    return std::make_shared<Expression>(token);
+    auto left = parsePrimary(); // Parse left side (string/number/identifier)
+    return parseOperatorExpression(0, std::move(left)); // Handle operators
+}
+
+std::shared_ptr<ASTNode> Parser::parsePrimary() {
+    Token token = peek();
+    if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER) {
+        token = advance();  // Consume the token once
+        return std::make_shared<Expression>(token);
+    } else {
+        std::cerr << "Unexpected token: " << token.value << std::endl;
+        return nullptr;
+    }
+}
+
+std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std::shared_ptr<ASTNode> left) {
+    while (true) {
+        Token opToken = peek();
+        if (opToken.type != TokenType::OPERATOR) break;
+        advance();
+
+        auto right = parsePrimary();
+        left = std::make_shared<BinaryExpression>(left, opToken, right);
+    }
+    return left;
 }
 
 /* NEW: Parse a simple condition in the form:
@@ -147,10 +172,16 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
 
     std::vector<std::shared_ptr<ASTNode>> body;
     while (!match(TokenType::ASCEND)) {  // Stop when we reach "And with each dawn..."
-        body.push_back(parseExpression());
+        auto expr = parseExpression();
+        if (expr) {
+            // Wrap each expression in a PrintStatement
+            auto printStmt = std::make_shared<PrintStatement>(expr);
+            body.push_back(printStmt);
+        } else {
+            std::cerr << "Error: Failed to parse expression in while loop body" << std::endl;
+        }
     }
 
-    consume(TokenType::IDENTIFIER, "Expected 'let count ascend' after loop body");
     Token step = consume(TokenType::NUMBER, "Expected increment value after 'let count ascend'");
 
     return std::make_shared<WhileLoop>(
@@ -160,7 +191,6 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
         body
     );
 }
-
 
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {

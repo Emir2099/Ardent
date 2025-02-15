@@ -10,7 +10,7 @@ int main() {
         Let it be known throughout the land, a number named count is of 1 winters.
         Whilst the sun doth rise, count remaineth below 5,
         so shall these words be spoken:
-            "Lo, count is" + count
+            count
         And with each dawn, let count ascend 1.
     )";
 

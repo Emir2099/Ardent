@@ -19,6 +19,41 @@ int Interpreter::getVariable(std::string name) {
     }
 }
 
+int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
+    if (auto numExpr = std::dynamic_pointer_cast<Expression>(expr)) {
+        if (numExpr->token.type == TokenType::IDENTIFIER) {
+            return getVariable(numExpr->token.value);
+        } else if (numExpr->token.type == TokenType::NUMBER) {
+            return std::stoi(numExpr->token.value);
+        }
+    } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
+        int left = evaluateExpr(binExpr->left);
+        int right = evaluateExpr(binExpr->right);
+        if (binExpr->op.value == "+") {
+            return left + right;
+        } else if (binExpr->op.value == "-") {
+            return left - right;
+        } else if (binExpr->op.value == "*") {
+            return left * right;
+        } else if (binExpr->op.value == "/") {
+            if (right == 0) {
+                std::cerr << "Runtime error: Division by zero." << std::endl;
+                return 0;
+            }
+            return left / right;
+        } else if (binExpr->op.value == "%") {
+            if (right == 0) {
+                std::cerr << "Runtime error: Modulo division by zero." << std::endl;
+                return 0;
+            }
+            return left % right;
+        }
+        // Add additional operators here as needed.
+    }
+    
+    return 0; // Default for errors
+}
+
 void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     if (!ast) {
         std::cerr << "Error: NULL AST Node encountered!" << std::endl;
@@ -99,11 +134,11 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     }
 
     // Handle print statements.
-    else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
-        if (auto expr = std::dynamic_pointer_cast<Expression>(printStmt->expression)) {
-            std::cout << "Output: " << expr->token.value << std::endl;
-        }
-    }
+      // Handle print statements.
+else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
+    std::string output = evaluatePrintExpr(printStmt->expression);
+    std::cout << output << std::endl;
+}
     else {
         std::cerr << "Error: Unknown AST Node encountered!" << std::endl;
     }
@@ -158,4 +193,22 @@ void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
     } else {
         std::cerr << "Error: Invalid Expression Node!" << std::endl;
     }
+}
+std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
+    if (auto strExpr = std::dynamic_pointer_cast<Expression>(expr)) {
+        if (strExpr->token.type == TokenType::STRING) {
+            return strExpr->token.value;
+        } else {
+            return std::to_string(evaluateExpr(expr));
+        }
+    } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
+        std::string left = evaluatePrintExpr(binExpr->left);
+        std::string right = evaluatePrintExpr(binExpr->right);
+        // Insert a space between left and right if needed.
+        if (!left.empty() && left.back() != ' ') {
+            left.push_back(' ');
+        }
+        return left + right;
+    }
+    return "";
 }
