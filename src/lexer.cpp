@@ -136,6 +136,8 @@ Token Lexer::parseIdentifier() {
     if (identifier == "then") return Token(TokenType::THEN, identifier);
     if (identifier == "whisper") return Token(TokenType::WHISPER, identifier);
     if (identifier == "Else") return Token(TokenType::ELSE, identifier);
+    if (identifier == "ascend") return Token(TokenType::ASCEND, identifier); 
+
     
     return Token(TokenType::IDENTIFIER, identifier);
 }
@@ -193,40 +195,58 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 24) == "Whilst the sun doth rise") {
             tokens.push_back(Token(TokenType::WHILST, "Whilst the sun doth rise"));
             currentPos += 24;
-            if (currentPos < input.length()) currentChar = input[currentPos];
-            else currentChar = '\0';
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
         } 
         else if (input.substr(currentPos, 15) == "remaineth below") {
             tokens.push_back(Token(TokenType::REMAINETH, "remaineth below"));
             currentPos += 15;
-            if (currentPos < input.length()) currentChar = input[currentPos];
-            else currentChar = '\0';
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
         } 
         else if (input.substr(currentPos, 30) == "so shall these words be spoken") {
             tokens.push_back(Token(TokenType::SPOKEN, "so shall these words be spoken"));
             currentPos += 30;
-            if (currentPos < input.length()) currentChar = input[currentPos];
-            else currentChar = '\0';
-        } 
-        else if (input.substr(currentPos, 36) == "And with each dawn, let count ascend") {
-            tokens.push_back(Token(TokenType::ASCEND, "And with each dawn, let count ascend"));
-            currentPos += 36;
-            if (currentPos < input.length()) currentChar = input[currentPos];
-            else currentChar = '\0';
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
         } 
         else if (input.substr(currentPos, 3) == "For") {
             tokens.push_back(Token(TokenType::FOR, "For"));
             currentPos += 3;
-            currentChar = input[currentPos]; // Advance past "For"
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
         }
-        
+        else if (input.substr(currentPos, 22) == "Do as the fates decree") {
+            tokens.push_back(Token(TokenType::FATES, "Do as the fates decree"));
+            currentPos += 22;
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
+        }
+        // else if (input.substr(currentPos, 5) == "Until") {
+        //     tokens.push_back(Token(TokenType::UNTIL, "Until"));
+        //     currentPos += 5;
+        //     if (currentPos < input.length())
+        //         currentChar = input[currentPos];
+        //     else
+        //         currentChar = '\0';
+        // }
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());
         }
-        else if (currentChar == '+' || currentChar == '-' || 
-                currentChar == '*' || currentChar == '/' || 
-                currentChar == '%' || currentChar == '=') {
+        else if (currentChar == '+' || currentChar == '-' ||
+                 currentChar == '*' || currentChar == '/' ||
+                 currentChar == '%' || currentChar == '=') {
             std::string op(1, currentChar);
             tokens.push_back(Token(TokenType::OPERATOR, op));
             advance();

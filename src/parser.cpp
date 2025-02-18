@@ -46,7 +46,6 @@ bool Parser::isAtEnd() {
 }
 
 // A simple parseExpression that consumes a single token.
-// Inside parser.cpp
 
 std::shared_ptr<ASTNode> Parser::parseExpression() {
     auto left = parsePrimary(); // Parse left side (string/number/identifier)
@@ -76,11 +75,11 @@ std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std:
     return left;
 }
 
-/* NEW: Parse a simple condition in the form:
+/* Parse a simple condition in the form:
       <variable> SURPASSETH <number>
    This function skips over filler tokens such as "the", "fates", "decree", "that". */
 std::shared_ptr<ASTNode> Parser::parseSimpleCondition() {
-    // Skip filler tokens (you may adjust the set as needed)
+    // Skip filler tokens 
     while (!isAtEnd() && 
            (peek().type == TokenType::FATES ||
             peek().type == TokenType::DECREE ||
@@ -163,26 +162,62 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     );
 }
 
-// 🔹 Parse a while loop
+// Parse a while loop
 std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
+    // assume the WHILST token has already been matched.
     Token loopVar = consume(TokenType::IDENTIFIER, "Expected loop variable after 'Whilst the sun doth rise'");
-    consume(TokenType::REMAINETH, "Expected 'remaineth below'");
+    consume(TokenType::REMAINETH, "Expected 'remaineth below' after loop variable");
     Token limit = consume(TokenType::NUMBER, "Expected numeric limit after 'remaineth below'");
     consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken'");
 
+    // Parse loop body until we detect the start of the increment clause.
+    // Here, we skip filler tokens such as "And", "with", "each", "dawn".
     std::vector<std::shared_ptr<ASTNode>> body;
-    while (!match(TokenType::ASCEND)) {  // Stop when we reach "And with each dawn..."
+    while (!isAtEnd()) {
+        Token next = peek();
+        // If the next token is "let", assume it's the start of the increment clause.
+        if (next.value == "let") {
+            break;
+        }
+        // If the token is a filler word from the increment clause, skip it.
+        if (next.value == "And" || next.value == "with" || next.value == "each" || next.value == "dawn") {
+            // Consume all consecutive filler tokens.
+            while (!isAtEnd() && (peek().value == "And" || peek().value == "with" ||
+                                  peek().value == "each" || peek().value == "dawn")) {
+                advance();
+            }
+            // After skipping, check if we now have "let".
+            if (peek().value == "let") break;
+            // Otherwise, continue parsing an expression.
+        }
         auto expr = parseExpression();
         if (expr) {
-            // Wrap each expression in a PrintStatement
-            auto printStmt = std::make_shared<PrintStatement>(expr);
-            body.push_back(printStmt);
+            // Wrap the expression in a PrintStatement
+            body.push_back(std::make_shared<PrintStatement>(expr));
         } else {
             std::cerr << "Error: Failed to parse expression in while loop body" << std::endl;
         }
     }
 
-    Token step = consume(TokenType::NUMBER, "Expected increment value after 'let count ascend'");
+    // Now parse the increment clause.
+    // It should be in the form: "let <var> ascend <step>"
+    Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' after loop body");
+    if (letToken.value != "let") {
+        std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
+        return nullptr;
+    }
+    Token incVar = consume(TokenType::IDENTIFIER, "Expected loop variable in increment clause");
+    if (incVar.value != loopVar.value) {
+        std::cerr << "Error: Loop variable in increment clause ('" << incVar.value
+                  << "') does not match expected ('" << loopVar.value << "')" << std::endl;
+        return nullptr;
+    }
+    Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable");
+    if (ascendToken.value != "ascend") {
+        std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
+        return nullptr;
+    }
+    Token step = consume(TokenType::NUMBER, "Expected increment value after 'ascend'");
 
     return std::make_shared<WhileLoop>(
         std::make_shared<Expression>(loopVar),
@@ -193,34 +228,69 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
 }
 
 
+
 std::shared_ptr<ASTNode> Parser::parseForLoop() {
-    // After matching "For", parse the loop variable
+    // After matching "For", parse the loop variable.
     Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'For'");
     auto loopVar = std::make_shared<Expression>(loopVarToken);
 
     // Expect "remaineth below"
     consume(TokenType::REMAINETH, "Expected 'remaineth below' after loop variable");
 
-    // Parse the limit (e.g., 5)
+    // Parse the limit
     auto limit = parseExpression();
 
-    // Create condition: count < 5
+    // Create condition: <loopVar> remaineth <limit>
     Token op(TokenType::REMAINETH, "remaineth below");
     auto condition = std::make_shared<BinaryExpression>(loopVar, op, limit);
 
-    // Parse the loop body
+    // Parse the loop body:
+    // Expect the token: "so shall these words be spoken"
     consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken'");
+
+    // Now parse the loop body, skipping filler tokens such as "And", "with", "each", "dawn", and commas.
     std::vector<std::shared_ptr<ASTNode>> body;
-    while (!match(TokenType::ASCEND)) {
+    while (!isAtEnd() && peek().value != "let") {
+        Token next = peek();
+        if (next.value == "And" || next.value == "with" || next.value == "each" || 
+            next.value == "dawn" || next.value == ",") {
+            advance();
+            continue;
+        }
         auto expr = parseExpression();
-        if (expr) body.push_back(std::make_shared<PrintStatement>(expr));
+        if (expr) {
+            // Wrap each expression in a PrintStatement
+            body.push_back(std::make_shared<PrintStatement>(expr));
+        } else {
+            std::cerr << "Error: Failed to parse expression in for loop body" << std::endl;
+            break;
+        }
     }
 
-    // Parse the increment step (e.g., 1)
+    // Parse the increment clause.
+    // It should be in the form: "let <var> ascend <step>"
+    Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' at the start of increment clause");
+    if (letToken.value != "let") {
+        std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
+        return nullptr;
+    }
+    Token incVar = consume(TokenType::IDENTIFIER, "Expected loop variable in increment clause");
+    if (incVar.value != loopVarToken.value) {
+        std::cerr << "Error: Loop variable in increment clause ('" << incVar.value
+                  << "') does not match expected ('" << loopVarToken.value << "')" << std::endl;
+        return nullptr;
+    }
+    // Expect the 'ascend' token as type ASCEND.
+    Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable");
+    if (ascendToken.value != "ascend") {
+        std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
+        return nullptr;
+    }
     auto step = parseExpression();
 
     return std::make_shared<ForLoop>(loopVar, condition, step, std::make_shared<BlockStatement>(body));
 }
+
 
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {

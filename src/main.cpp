@@ -7,19 +7,12 @@
 
 int main() {
     std::string input = R"(
-    Let it be known throughout the land, a number named count is of 1 winters.
-    For count remaineth below 5, so shall these words be spoken:
-    "Count inside for is " + count
-    And with each dawn, let count ascend 1.
-    Whilst the sun doth rise, count remaineth below 10,
-    so shall these words be spoken:
-    "Count inside while is " + count
-    And with each dawn, let count ascend 1.
-    Let it be known throughout the land, a number named age is of 12 winters.
-    Should the fates decree that age surpasseth 18, 
-    then let it be proclaimed: "Thou art of age."
-    Else whisper: "Nay."
+        Let it be known throughout the land, a number named hithc is of 1 winters.
+        For hithc remaineth below 5, so shall these words be spoken:
+            "cool inside for is " + hithc
+        And with each dawn, let hithc ascend 1.
     )";
+    
 
     Lexer lexer(input);
     std::vector<Token> tokens = lexer.tokenize();
@@ -50,11 +43,24 @@ std::cout << "Parsing complete!" << std::endl;
 
 
 
+// For count remaineth below 5, so shall these words be spoken:
+// "cool inside for is " + count
+// And with each dawn, let count ascend 1.
+
 
         // Let it be known throughout the land, a number named age is of 12 winters.
         // Should the fates decree that age surpasseth 18, 
         // then let it be proclaimed: "Thou art of age."
         // Else whisper: "Nay."
+
+
+
+
+        // Whilst the sun doth rise, hithc remaineth below 10,
+        // so shall these words be spoken:
+        //     "Count inside while is " + hithc
+        // And with each dawn, let hithc ascend 1.
+
 
 
         // Let it be known throughout the land, a number named count is of 1 winters.

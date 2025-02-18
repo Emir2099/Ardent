@@ -55,7 +55,7 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             }
             return left % right;
         }
-        // Add additional operators here as needed.
+        // Add additional operators here 
     }
     
     return 0; // Default for errors
@@ -97,7 +97,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     // Handle if-statements.
     else if (auto ifStmt = std::dynamic_pointer_cast<IfStatement>(ast)) {
         std::cout << "Executing IF condition..." << std::endl;
-        // Now, expect the condition to be a BinaryExpression.
+        // expect the condition to be a BinaryExpression.
         auto condBinExpr = std::dynamic_pointer_cast<BinaryExpression>(ifStmt->condition);
         if (condBinExpr) {
             auto leftExpr = std::dynamic_pointer_cast<Expression>(condBinExpr->left);
@@ -115,7 +115,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             std::cerr << "Error: IF condition is not a valid binary expression." << std::endl;
         }
     }
-     // 🔹 Handle while loop execution
+     // Handle while loop execution
     else if (auto whileLoop = std::dynamic_pointer_cast<WhileLoop>(ast)) {
         std::cout << "Executing WHILE loop..." << std::endl;
 
@@ -143,7 +143,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         executeForLoop(forLoop);
     }
 
-    // Handle print statements.
+
       // Handle print statements.
 else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
     std::string output = evaluatePrintExpr(printStmt->expression);
@@ -156,11 +156,7 @@ else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
 
 
 void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
-    if (!loop || !loop->loopVar || !loop->limit || !loop->step) {
-        std::cerr << "Error: Invalid WhileLoop AST Node" << std::endl;
-        return;
-    }
-
+    // Use the 'step' field
     std::string varName = loop->loopVar->token.value;
     int limit = std::stoi(loop->limit->token.value);
     int step = std::stoi(loop->step->token.value);
@@ -170,14 +166,12 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
         return;
     }
 
-    std::cout << "Executing WHILE loop for variable: " << varName << " from " 
-              << variables[varName] << " to " << limit << " with step " << step << std::endl;
-
+    // Loop until the variable reaches the limit
     while (variables[varName] < limit) {
         std::cout << "Loop iteration: " << variables[varName] << std::endl;
 
-        // ✅ Execute each statement in the loop body
-        for (const auto& stmt : loop->body) {
+        // The body is a vector of AST nodes, so execute each one:
+        for (const auto &stmt : loop->body) {
             execute(stmt);
         }
 
@@ -186,19 +180,19 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
 }
 
 void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
-    // Initialize loop variable (e.g., count = 1)
+    // Initialize loop variable 
     std::string varName;
     if (auto expr = std::dynamic_pointer_cast<Expression>(loop->init)) {
         varName = expr->token.value;
         variables[varName] = evaluateExpr(loop->init);
     }
 
-    // Loop while condition holds (e.g., count < 5)
+    // Loop while condition holds
     while (evaluateExpr(loop->condition)) {
         // Execute the loop body (BlockStatement)
         execute(loop->body);
 
-        // Increment loop variable (e.g., count += 1)
+        // Increment loop variable
         variables[varName] += evaluateExpr(loop->increment);
     }
 }
