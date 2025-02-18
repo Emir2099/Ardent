@@ -27,6 +27,7 @@ private:
     std::shared_ptr<ASTNode> parseOperatorExpression(int precedence, std::shared_ptr<ASTNode> left);
     std::shared_ptr<ASTNode> parsePrimary();
     std::shared_ptr<ASTNode> parseForLoop();
+    std::shared_ptr<ASTNode> parseDoWhileLoop();
     
 public:
     Parser(std::vector<Token> tokens);

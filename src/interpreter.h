@@ -16,6 +16,7 @@ public:
     int getVariable(std::string name);
     void executeWhileLoop(std::shared_ptr<WhileLoop> loop);
     void executeForLoop(std::shared_ptr<ForLoop> loop);
+    void executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop);
 
 };
 

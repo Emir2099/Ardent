@@ -291,6 +291,89 @@ std::shared_ptr<ASTNode> Parser::parseForLoop() {
     return std::make_shared<ForLoop>(loopVar, condition, step, std::make_shared<BlockStatement>(body));
 }
 
+std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
+    // DO_FATES is already matched.
+    // Consume the "so shall these words be spoken" token.
+    consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken' after 'Do as the fates decree'");
+    
+    // Parse the loop body as a single statement.
+    auto bodyStmt = parseStatement();
+    if (!bodyStmt) {
+        std::cerr << "Error: Failed to parse do-while loop body at position " << current << std::endl;
+        return nullptr;
+    }
+    std::shared_ptr<BlockStatement> bodyBlock;
+    if (auto block = std::dynamic_pointer_cast<BlockStatement>(bodyStmt)) {
+        bodyBlock = block;
+    } else {
+        bodyBlock = std::make_shared<BlockStatement>(std::vector<std::shared_ptr<ASTNode>>{ bodyStmt });
+    }
+    
+    // Optionally, parse the update clause.
+    std::shared_ptr<Expression> updateExpr = nullptr;
+    std::shared_ptr<Expression> updateLoopVar = nullptr;
+    if (!isAtEnd() && peek().value == "And") {
+        // Skip filler tokens until we see "let"
+        while (!isAtEnd() && (peek().value == "And" || peek().value == "with" ||
+                              peek().value == "each" || peek().value == "dawn" || peek().value == ",")) {
+            advance();
+        }
+        // Now expect "let"
+        Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' at start of update clause in do-while loop");
+        if (letToken.value != "let") {
+            std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
+            return nullptr;
+        }
+        // Consume the loop variable from the update clause.
+        Token incVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable in update clause");
+        updateLoopVar = std::make_shared<Expression>(incVarToken);
+        // Expect the 'ascend' token.
+        Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable in update clause");
+        if (ascendToken.value != "ascend") {
+            std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
+            return nullptr;
+        }
+        // Parse the increment value.
+        updateExpr = std::dynamic_pointer_cast<Expression>(parseExpression());
+    }
+    
+    // Consume the UNTIL token.
+    if (!match(TokenType::UNTIL)) {
+        std::cerr << "Error: Expected 'Until' after do-while loop body/update at position " << current << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the loop condition using parseSimpleCondition() (e.g. "count surpasseth 10")
+    auto conditionExpr = parseSimpleCondition();
+    if (!conditionExpr) {
+        std::cerr << "Error: Failed to parse do-while loop condition at position " << current << std::endl;
+        return nullptr;
+    }
+    // Extract the loop variable from the condition (it should be the left side of the binary expression).
+    auto binCond = std::dynamic_pointer_cast<BinaryExpression>(conditionExpr);
+    if (!binCond) {
+        std::cerr << "Error: Do-while loop condition is not a binary expression" << std::endl;
+        return nullptr;
+    }
+    auto conditionLoopVarExpr = std::dynamic_pointer_cast<Expression>(binCond->left);
+    if (!conditionLoopVarExpr) {
+        std::cerr << "Error: Could not extract loop variable from do-while condition" << std::endl;
+        return nullptr;
+    }
+    // If an update clause was provided, ensure its loop variable matches the one in the condition.
+    if (updateLoopVar && (updateLoopVar->token.value != conditionLoopVarExpr->token.value)) {
+        std::cerr << "Error: Loop variable in update clause ('" << updateLoopVar->token.value
+                  << "') does not match loop variable in condition ('" << conditionLoopVarExpr->token.value << "')" << std::endl;
+        return nullptr;
+    }
+    
+    // Use the loop variable from the condition.
+    std::shared_ptr<Expression> loopVarExpr = conditionLoopVarExpr;
+    
+    return std::make_shared<DoWhileLoop>(bodyBlock, conditionExpr, updateExpr, loopVarExpr);
+}
+
+
 
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {
@@ -300,12 +383,18 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseIfStatement();
     } else if (match(TokenType::SPELL_NAMED)) {
         return parseFunctionCall();
-    } else if (match(TokenType::WHILST)) {  // Detects while loop
+    } else if (match(TokenType::WHILST)) {
         return parseWhileLoop();
-    }  else if (match(TokenType::FOR)) {  // Handle FOR loops
+    } else if (match(TokenType::FOR)) {
         return parseForLoop();
-    }   
-    else if (match(TokenType::LET_PROCLAIMED)) {
+    } else if (match(TokenType::DO_FATES)) {
+        return parseDoWhileLoop();
+    } else if (match(TokenType::LET_PROCLAIMED)) {
+        auto expr = parseExpression();
+        return std::make_shared<PrintStatement>(expr);
+    } else if (peek().type == TokenType::STRING ||
+               peek().type == TokenType::NUMBER ||
+               peek().type == TokenType::IDENTIFIER) {
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
     } else {
@@ -313,6 +402,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return nullptr;
     }
 }
+
 
 // Parse all statements into a BlockStatement.
 std::shared_ptr<ASTNode> Parser::parse() {

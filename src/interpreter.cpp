@@ -142,6 +142,10 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     else if (auto forLoop = std::dynamic_pointer_cast<ForLoop>(ast)) {
         executeForLoop(forLoop);
     }
+    else if (auto doWhileStmt = std::dynamic_pointer_cast<DoWhileLoop>(ast)) {
+        executeDoWhileLoop(doWhileStmt);
+    }
+    
 
 
       // Handle print statements.
@@ -196,6 +200,25 @@ void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
         variables[varName] += evaluateExpr(loop->increment);
     }
 }
+
+
+void Interpreter::executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop) {
+    std::string varName = loop->loopVar->token.value;
+    if (variables.find(varName) == variables.end()) {
+        std::cerr << "Error: Undefined loop variable '" << varName << "'" << std::endl;
+        return;
+    }
+    do {
+        for (const auto &stmt : loop->body->statements) {
+            execute(stmt);
+        }
+        if (loop->update) {
+            int inc = evaluateExpr(loop->update);
+            variables[varName] += inc;
+        }
+    } while (evaluateExpr(loop->condition) == 0); // Loop while condition is NOT met
+}
+
 
 
 void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {

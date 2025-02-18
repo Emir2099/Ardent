@@ -84,4 +84,22 @@ public:
         : loopVar(loopVar), limit(limit), step(step), body(body) {}
 };
 
+// Represents a do-while loop.
+
+// NEW: Represents a do-while loop.
+class DoWhileLoop : public ASTNode {
+    public:
+        std::shared_ptr<Expression> loopVar;  // The loop variable (e.g. count)
+        std::shared_ptr<BlockStatement> body;
+        std::shared_ptr<ASTNode> condition;
+        std::shared_ptr<Expression> update;     // The update/increment value
+        DoWhileLoop(std::shared_ptr<BlockStatement> body,
+                    std::shared_ptr<ASTNode> condition,
+                    std::shared_ptr<Expression> update,
+                    std::shared_ptr<Expression> loopVar)
+            : body(body), condition(condition), update(update), loopVar(loopVar) {}
+    };
+    
+    
+
 #endif

@@ -7,10 +7,12 @@
 
 int main() {
     std::string input = R"(
-        Let it be known throughout the land, a number named hithc is of 1 winters.
-        For hithc remaineth below 5, so shall these words be spoken:
-            "cool inside for is " + hithc
-        And with each dawn, let hithc ascend 1.
+        Let it be known throughout the land, a number named ct is of 1 winters.
+        Do as the fates decree:
+            so shall these words be spoken:
+                "CT inside do-while is " + ct
+            And with each dawn, let ct ascend 1.
+        Until ct surpasseth 10.
     )";
     
 

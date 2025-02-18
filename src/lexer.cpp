@@ -225,21 +225,19 @@ std::vector<Token> Lexer::tokenize() {
                 currentChar = '\0';
         }
         else if (input.substr(currentPos, 22) == "Do as the fates decree") {
-            tokens.push_back(Token(TokenType::FATES, "Do as the fates decree"));
+            tokens.push_back(Token(TokenType::DO_FATES, "Do as the fates decree"));
             currentPos += 22;
             if (currentPos < input.length())
                 currentChar = input[currentPos];
             else
                 currentChar = '\0';
         }
-        // else if (input.substr(currentPos, 5) == "Until") {
-        //     tokens.push_back(Token(TokenType::UNTIL, "Until"));
-        //     currentPos += 5;
-        //     if (currentPos < input.length())
-        //         currentChar = input[currentPos];
-        //     else
-        //         currentChar = '\0';
-        // }
+        else if (input.substr(currentPos, 5) == "Until") {
+            tokens.push_back(Token(TokenType::UNTIL, "Until"));
+            currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());
