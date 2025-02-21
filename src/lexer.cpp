@@ -249,6 +249,10 @@ std::vector<Token> Lexer::tokenize() {
         else if (currentChar == '"') {
             tokens.push_back(parseString());
         }
+        // Check for numbers (including negative)
+else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))) {
+    tokens.push_back(parseNumber());
+}
         else if (currentChar == '+' || currentChar == '-' ||
                  currentChar == '*' || currentChar == '/' ||
                  currentChar == '%' || currentChar == '=') {

@@ -25,6 +25,12 @@ private:
     Token parseSpellNamed();
     Token parseIsCastUpon();
     Token parseLetProclaimed();
+    char peekNextChar() {
+    if (currentPos + 1 < input.length()) {
+        return input[currentPos + 1];
+    }
+    return '\0';
+}
     
 public:
     Lexer(const std::string& input);

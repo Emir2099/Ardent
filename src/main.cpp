@@ -7,12 +7,8 @@
 
 int main() {
     std::string input =  R"(
-     Let it be known throughout the land, a number named ct is of 0 winters.  
-      Do as the fates decree:  
-          so shall these words be spoken:  
-              "CT inside do-while is " + ct  
-          And with each dawn, let ct descend 1.  
-      Until ct remaineth below 1.
+    Let it be known throughout the land, a number named ct is of 0 winters.  
+    Let it be known throughout the land, a number named count is of -3 winters.  
     )";
     
 
