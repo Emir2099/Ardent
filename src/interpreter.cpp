@@ -29,7 +29,7 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
     } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
         int left = evaluateExpr(binExpr->left);
         int right = evaluateExpr(binExpr->right);
-        // 🔹 Handle comparison operators
+        // Handle comparison operators
         if (binExpr->op.type == TokenType::SURPASSETH) {
             return left > right ? 1 : 0;
         } else if (binExpr->op.type == TokenType::REMAINETH) {
@@ -55,7 +55,7 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             }
             return left % right;
         }
-        // Add additional operators here 
+    
     }
     
     return 0; // Default for errors
@@ -116,29 +116,10 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
     }
      // Handle while loop execution
-    else if (auto whileLoop = std::dynamic_pointer_cast<WhileLoop>(ast)) {
-        std::cout << "Executing WHILE loop..." << std::endl;
-
-        std::string loopVar = whileLoop->loopVar->token.value;
-        int limit = std::stoi(whileLoop->limit->token.value);
-        int step = std::stoi(whileLoop->step->token.value);
-
-        if (variables.find(loopVar) == variables.end()) {
-            std::cerr << "Error: Undefined loop variable '" << loopVar << "'" << std::endl;
-            return;
-        }
-
-        while (variables[loopVar] < limit) {
-            std::cout << "Loop iteration: " << variables[loopVar] << std::endl;
-
-            // 🔹 Execute loop body
-            for (const auto& stmt : whileLoop->body) {
-                execute(stmt);
-            }
-
-            variables[loopVar] += step;
-        }
+     else if (auto whileLoop = std::dynamic_pointer_cast<WhileLoop>(ast)) {
+        executeWhileLoop(whileLoop);
     }
+    
     else if (auto forLoop = std::dynamic_pointer_cast<ForLoop>(ast)) {
         executeForLoop(forLoop);
     }
@@ -160,28 +141,46 @@ else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
 
 
 void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
-    // Use the 'step' field
     std::string varName = loop->loopVar->token.value;
-    int limit = std::stoi(loop->limit->token.value);
-    int step = std::stoi(loop->step->token.value);
+    int limitVal = evaluateExpr(loop->limit);
+    int stepVal = evaluateExpr(loop->step);
 
     if (variables.find(varName) == variables.end()) {
         std::cerr << "Error: Undefined loop variable '" << varName << "'" << std::endl;
         return;
     }
 
-    // Loop until the variable reaches the limit
-    while (variables[varName] < limit) {
-        std::cout << "Loop iteration: " << variables[varName] << std::endl;
+    while (true) {
+        int currentVal = variables[varName];
+        bool conditionMet;
+        switch (loop->comparisonOp) {
+            case TokenType::SURPASSETH:
+                conditionMet = (currentVal > limitVal);
+                break;
+            case TokenType::REMAINETH:
+                conditionMet = (currentVal < limitVal);
+                break;
+            default:
+                std::cerr << "Error: Invalid comparison operator" << std::endl;
+                return;
+        }
 
-        // The body is a vector of AST nodes, so execute each one:
-        for (const auto &stmt : loop->body) {
+        if (!conditionMet) break;
+
+        // Execute body
+        for (const auto& stmt : loop->body) {
             execute(stmt);
         }
 
-        variables[varName] += step;
+        // Update variable
+        if (loop->stepDirection == TokenType::DESCEND) {
+            variables[varName] -= stepVal;
+        } else {
+            variables[varName] += stepVal;
+        }
     }
 }
+
 
 void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
     // Initialize loop variable 
@@ -195,9 +194,10 @@ void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
     while (evaluateExpr(loop->condition)) {
         // Execute the loop body (BlockStatement)
         execute(loop->body);
-
+        int stepVal = evaluateExpr(loop->increment);
+        if (loop->stepDirection == TokenType::DESCEND) stepVal = -stepVal;
         // Increment loop variable
-        variables[varName] += evaluateExpr(loop->increment);
+        variables[varName] += stepVal;
     }
 }
 
@@ -209,14 +209,17 @@ void Interpreter::executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop) {
         return;
     }
     do {
+        // Execute body
         for (const auto &stmt : loop->body->statements) {
             execute(stmt);
         }
+        // Apply update
         if (loop->update) {
             int inc = evaluateExpr(loop->update);
+            if (loop->stepDirection == TokenType::DESCEND) inc = -inc;
             variables[varName] += inc;
         }
-    } while (evaluateExpr(loop->condition) == 0); // Loop while condition is NOT met
+    } while (evaluateExpr(loop->condition)); // Loop while condition is TRUE
 }
 
 

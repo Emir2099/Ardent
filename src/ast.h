@@ -60,44 +60,50 @@ public:
 };
 
 struct ForLoop : public ASTNode {
-    std::shared_ptr<ASTNode> init;   // Variable initialization
-    std::shared_ptr<ASTNode> condition;  // Condition (count < limit)
-    std::shared_ptr<ASTNode> increment;  // Step (count += 1)
-    std::shared_ptr<ASTNode> body;  // Loop body
+    std::shared_ptr<ASTNode> init;
+    std::shared_ptr<ASTNode> condition;
+    std::shared_ptr<ASTNode> increment;
+    TokenType stepDirection; 
+    std::shared_ptr<ASTNode> body;
 
     ForLoop(std::shared_ptr<ASTNode> init, std::shared_ptr<ASTNode> condition, 
-            std::shared_ptr<ASTNode> increment, std::shared_ptr<ASTNode> body)
-        : init(init), condition(condition), increment(increment), body(body) {}
+            std::shared_ptr<ASTNode> increment, TokenType stepDir, std::shared_ptr<ASTNode> body)
+        : init(init), condition(condition), increment(increment), stepDirection(stepDir), body(body) {}
 };
 
 
 // Represents a while loop
 class WhileLoop : public ASTNode {
-public:
-    std::shared_ptr<Expression> loopVar;
-    std::shared_ptr<Expression> limit;
-    std::shared_ptr<Expression> step;
-    std::vector<std::shared_ptr<ASTNode>> body;
+    public:
+        std::shared_ptr<Expression> loopVar;
+        std::shared_ptr<Expression> limit;
+        std::shared_ptr<Expression> step;
+        TokenType comparisonOp; // Track SURPASSETH/REMAINETH
+        TokenType stepDirection;
+        std::vector<std::shared_ptr<ASTNode>> body;
+    
+        WhileLoop(std::shared_ptr<Expression> loopVar, std::shared_ptr<Expression> limit,
+                  std::shared_ptr<Expression> step, TokenType comparisonOp, TokenType stepDir,
+                  std::vector<std::shared_ptr<ASTNode>> body)
+            : loopVar(loopVar), limit(limit), step(step), 
+              comparisonOp(comparisonOp), stepDirection(stepDir), body(body) {}
+    };
 
-    WhileLoop(std::shared_ptr<Expression> loopVar, std::shared_ptr<Expression> limit,
-              std::shared_ptr<Expression> step, std::vector<std::shared_ptr<ASTNode>> body)
-        : loopVar(loopVar), limit(limit), step(step), body(body) {}
-};
 
 // Represents a do-while loop.
-
-// NEW: Represents a do-while loop.
 class DoWhileLoop : public ASTNode {
     public:
-        std::shared_ptr<Expression> loopVar;  // The loop variable (e.g. count)
+        std::shared_ptr<Expression> loopVar;
         std::shared_ptr<BlockStatement> body;
         std::shared_ptr<ASTNode> condition;
-        std::shared_ptr<Expression> update;     // The update/increment value
+        std::shared_ptr<Expression> update;
+        TokenType stepDirection; // NEW
         DoWhileLoop(std::shared_ptr<BlockStatement> body,
                     std::shared_ptr<ASTNode> condition,
                     std::shared_ptr<Expression> update,
-                    std::shared_ptr<Expression> loopVar)
-            : body(body), condition(condition), update(update), loopVar(loopVar) {}
+                    std::shared_ptr<Expression> loopVar,
+                    TokenType stepDir)
+            : body(body), condition(condition), update(update), loopVar(loopVar), stepDirection(stepDir) {}
     };
     
     

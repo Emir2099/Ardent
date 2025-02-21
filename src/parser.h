@@ -18,7 +18,7 @@ private:
     bool isAtEnd();
 
     std::shared_ptr<ASTNode> parseExpression();
-    std::shared_ptr<ASTNode> parseSimpleCondition(); // NEW helper for if-condition
+    std::shared_ptr<ASTNode> parseSimpleCondition(); 
     std::shared_ptr<ASTNode> parseIfStatement();
     std::shared_ptr<ASTNode> parseFunctionCall();
     std::shared_ptr<ASTNode> parseVariableDeclaration();

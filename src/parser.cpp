@@ -90,17 +90,33 @@ std::shared_ptr<ASTNode> Parser::parseSimpleCondition() {
     }
     // Expect the variable name.
     Token left = consume(TokenType::IDENTIFIER, "Expected variable name in condition");
-    // Expect the 'surpasseth' operator.
-    Token op = consume(TokenType::SURPASSETH, "Expected 'surpasseth' in condition");
-    // Expect a numeric value.
-    Token right = consume(TokenType::NUMBER, "Expected a numeric value in condition");
+    
+    // Handle both SURPASSETH and REMAINETH operators
+     // Initialize 'op' with dummy values first
+    Token op(TokenType::INVALID, "");  // Explicit initialization
+    if (peek().type == TokenType::SURPASSETH || peek().type == TokenType::REMAINETH) {
+        op = advance(); // Consume the operator token
+    } else {
+        std::cerr << "Error: Expected 'surpasseth' or 'remaineth below' in condition" << std::endl;
+        return nullptr;
+    }
+
+    // Parse numeric value (including negative numbers)
+    Token right(TokenType::NUMBER, "");
+    if (peek().type == TokenType::OPERATOR && peek().value == "-") {
+        advance();
+        Token num = consume(TokenType::NUMBER, "Expected number after '-'");
+        right = Token(TokenType::NUMBER, "-" + num.value);
+    } else {
+        right = consume(TokenType::NUMBER, "Expected numeric value in condition");
+    }
+
     return std::make_shared<BinaryExpression>(
         std::make_shared<Expression>(left),
         op,
         std::make_shared<Expression>(right)
     );
 }
-
 // Parse an if-statement.
 // Assumes that the SHOULD token has already been matched.
 std::shared_ptr<ASTNode> Parser::parseIfStatement() {
@@ -164,85 +180,74 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
 
 // Parse a while loop
 std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
-    // assume the WHILST token has already been matched.
-    Token loopVar = consume(TokenType::IDENTIFIER, "Expected loop variable after 'Whilst the sun doth rise'");
-    consume(TokenType::REMAINETH, "Expected 'remaineth below' after loop variable");
-    Token limit = consume(TokenType::NUMBER, "Expected numeric limit after 'remaineth below'");
+    // Assume the WHILST token has already been matched.
+    Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'Whilst the sun doth rise'");
+    
+    // Check for either SURPASSETH or REMAINETH as the operator
+    Token opToken = advance();
+    if (opToken.type != TokenType::SURPASSETH && opToken.type != TokenType::REMAINETH) {
+        std::cerr << "Error: Expected 'surpasseth' or 'remaineth below' after loop variable, got '" << opToken.value << "'" << std::endl;
+        return nullptr;
+    }
+    
+    Token limit = consume(TokenType::NUMBER, "Expected numeric limit after operator");
     consume(TokenType::SPOKEN, "Expected 'so shall these words be spoken'");
 
-    // Parse loop body until we detect the start of the increment clause.
-    // Here, we skip filler tokens such as "And", "with", "each", "dawn".
+    // Parse loop body
     std::vector<std::shared_ptr<ASTNode>> body;
-    while (!isAtEnd()) {
-        Token next = peek();
-        // If the next token is "let", assume it's the start of the increment clause.
-        if (next.value == "let") {
-            break;
-        }
-        // If the token is a filler word from the increment clause, skip it.
-        if (next.value == "And" || next.value == "with" || next.value == "each" || next.value == "dawn") {
-            // Consume all consecutive filler tokens.
-            while (!isAtEnd() && (peek().value == "And" || peek().value == "with" ||
-                                  peek().value == "each" || peek().value == "dawn")) {
-                advance();
-            }
-            // After skipping, check if we now have "let".
-            if (peek().value == "let") break;
-            // Otherwise, continue parsing an expression.
+    while (!isAtEnd() && peek().value != "let") {
+        // Skip filler tokens
+        if (peek().value == "And" || peek().value == "with" || peek().value == "each" || peek().value == "dawn") {
+            advance();
+            continue;
         }
         auto expr = parseExpression();
         if (expr) {
-            // Wrap the expression in a PrintStatement
             body.push_back(std::make_shared<PrintStatement>(expr));
         } else {
             std::cerr << "Error: Failed to parse expression in while loop body" << std::endl;
+            break;
         }
     }
 
-    // Now parse the increment clause.
-    // It should be in the form: "let <var> ascend <step>"
-    Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' after loop body");
-    if (letToken.value != "let") {
-        std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
-        return nullptr;
-    }
+    // Parse increment clause
+    consume(TokenType::IDENTIFIER, "Expected 'let'"); // Consume 'let'
     Token incVar = consume(TokenType::IDENTIFIER, "Expected loop variable in increment clause");
-    if (incVar.value != loopVar.value) {
-        std::cerr << "Error: Loop variable in increment clause ('" << incVar.value
-                  << "') does not match expected ('" << loopVar.value << "')" << std::endl;
+    if (incVar.value != loopVarToken.value) {
+        std::cerr << "Error: Loop variable mismatch in increment clause" << std::endl;
         return nullptr;
     }
-    Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable");
-    if (ascendToken.value != "ascend") {
-        std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
-        return nullptr;
-    }
-    Token step = consume(TokenType::NUMBER, "Expected increment value after 'ascend'");
+    Token stepDirToken = advance(); // ASCEND or DESCEND
+    Token stepValue = consume(TokenType::NUMBER, "Expected step value");
 
     return std::make_shared<WhileLoop>(
-        std::make_shared<Expression>(loopVar),
+        std::make_shared<Expression>(loopVarToken),
         std::make_shared<Expression>(limit),
-        std::make_shared<Expression>(step),
+        std::make_shared<Expression>(stepValue),
+        opToken.type, // Pass SURPASSETH/REMAINETH
+        stepDirToken.type,
         body
     );
 }
 
 
-
+// Parse a for loop
 std::shared_ptr<ASTNode> Parser::parseForLoop() {
     // After matching "For", parse the loop variable.
     Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'For'");
     auto loopVar = std::make_shared<Expression>(loopVarToken);
-
-    // Expect "remaineth below"
-    consume(TokenType::REMAINETH, "Expected 'remaineth below' after loop variable");
-
+// Expect either "surpasseth" or "remaineth below" 🛠️
+Token comparisonOpToken = advance();
+if (comparisonOpToken.type != TokenType::SURPASSETH && 
+    comparisonOpToken.type != TokenType::REMAINETH) {
+    std::cerr << "Error: Expected 'surpasseth' or 'remaineth below' after loop variable\n";
+    return nullptr;
+}
     // Parse the limit
     auto limit = parseExpression();
 
     // Create condition: <loopVar> remaineth <limit>
-    Token op(TokenType::REMAINETH, "remaineth below");
-    auto condition = std::make_shared<BinaryExpression>(loopVar, op, limit);
+    auto condition = std::make_shared<BinaryExpression>(loopVar, comparisonOpToken, limit);
 
     // Parse the loop body:
     // Expect the token: "so shall these words be spoken"
@@ -268,7 +273,7 @@ std::shared_ptr<ASTNode> Parser::parseForLoop() {
     }
 
     // Parse the increment clause.
-    // It should be in the form: "let <var> ascend <step>"
+    // It should be in the form: "let <var> ascend <step>" or "let <var> descend <step>"
     Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' at the start of increment clause");
     if (letToken.value != "let") {
         std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
@@ -280,17 +285,21 @@ std::shared_ptr<ASTNode> Parser::parseForLoop() {
                   << "') does not match expected ('" << loopVarToken.value << "')" << std::endl;
         return nullptr;
     }
-    // Expect the 'ascend' token as type ASCEND.
-    Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable");
-    if (ascendToken.value != "ascend") {
-        std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
+    Token stepToken = advance(); // Consumes either ASCEND or DESCEND
+    TokenType stepDir = stepToken.type;
+    if (stepDir != TokenType::ASCEND && stepDir != TokenType::DESCEND) {
+        std::cerr << "Error: Expected 'ascend' or 'descend' but got '" << stepToken.value << "'" << std::endl;
         return nullptr;
     }
     auto step = parseExpression();
 
-    return std::make_shared<ForLoop>(loopVar, condition, step, std::make_shared<BlockStatement>(body));
+    return std::make_shared<ForLoop>(
+        loopVar, condition, step, stepDir, std::make_shared<BlockStatement>(body)
+    );
 }
 
+
+// Parse a do-while loop
 std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
     // DO_FATES is already matched.
     // Consume the "so shall these words be spoken" token.
@@ -308,7 +317,8 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
     } else {
         bodyBlock = std::make_shared<BlockStatement>(std::vector<std::shared_ptr<ASTNode>>{ bodyStmt });
     }
-    
+    TokenType stepDir = TokenType::ASCEND; // Default to ASCEND
+
     // Optionally, parse the update clause.
     std::shared_ptr<Expression> updateExpr = nullptr;
     std::shared_ptr<Expression> updateLoopVar = nullptr;
@@ -327,10 +337,11 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
         // Consume the loop variable from the update clause.
         Token incVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable in update clause");
         updateLoopVar = std::make_shared<Expression>(incVarToken);
-        // Expect the 'ascend' token.
-        Token ascendToken = consume(TokenType::ASCEND, "Expected 'ascend' after loop variable in update clause");
-        if (ascendToken.value != "ascend") {
-            std::cerr << "Error: Expected 'ascend' but got '" << ascendToken.value << "'" << std::endl;
+        // Expect the 'ascend' or 'descend' token.
+        Token stepToken = advance(); // Consumes either ASCEND or DESCEND
+        stepDir = stepToken.type;
+        if (stepDir != TokenType::ASCEND && stepDir != TokenType::DESCEND) {
+            std::cerr << "Error: Expected 'ascend' or 'descend' but got '" << stepToken.value << "'" << std::endl;
             return nullptr;
         }
         // Parse the increment value.
@@ -370,7 +381,7 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
     // Use the loop variable from the condition.
     std::shared_ptr<Expression> loopVarExpr = conditionLoopVarExpr;
     
-    return std::make_shared<DoWhileLoop>(bodyBlock, conditionExpr, updateExpr, loopVarExpr);
+    return std::make_shared<DoWhileLoop>(bodyBlock, conditionExpr, updateExpr, loopVarExpr, stepDir);
 }
 
 

@@ -6,13 +6,13 @@
 #include <vector>
 
 int main() {
-    std::string input = R"(
-        Let it be known throughout the land, a number named ct is of 1 winters.
-        Do as the fates decree:
-            so shall these words be spoken:
-                "CT inside do-while is " + ct
-            And with each dawn, let ct ascend 1.
-        Until ct surpasseth 10.
+    std::string input =  R"(
+     Let it be known throughout the land, a number named ct is of 0 winters.  
+      Do as the fates decree:  
+          so shall these words be spoken:  
+              "CT inside do-while is " + ct  
+          And with each dawn, let ct descend 1.  
+      Until ct remaineth below 1.
     )";
     
 
@@ -45,28 +45,3 @@ std::cout << "Parsing complete!" << std::endl;
 
 
 
-// For count remaineth below 5, so shall these words be spoken:
-// "cool inside for is " + count
-// And with each dawn, let count ascend 1.
-
-
-        // Let it be known throughout the land, a number named age is of 12 winters.
-        // Should the fates decree that age surpasseth 18, 
-        // then let it be proclaimed: "Thou art of age."
-        // Else whisper: "Nay."
-
-
-
-
-        // Whilst the sun doth rise, hithc remaineth below 10,
-        // so shall these words be spoken:
-        //     "Count inside while is " + hithc
-        // And with each dawn, let hithc ascend 1.
-
-
-
-        // Let it be known throughout the land, a number named count is of 1 winters.
-        // Whilst the sun doth rise, count remaineth below 5,
-        // so shall these words be spoken:
-        //     count
-        // And with each dawn, let count ascend 1.

@@ -121,7 +121,7 @@ Token Lexer::parseIsCastUpon() {
     return Token(TokenType::ERROR, "Invalid CAST_UPON");
 }
 
-// Updated identifier parser with keywords
+// identifier parser with keywords
 Token Lexer::parseIdentifier() {
     std::string identifier;
     while (isAlpha(currentChar) || isDigit(currentChar) || currentChar == '_') {
@@ -137,14 +137,21 @@ Token Lexer::parseIdentifier() {
     if (identifier == "whisper") return Token(TokenType::WHISPER, identifier);
     if (identifier == "Else") return Token(TokenType::ELSE, identifier);
     if (identifier == "ascend") return Token(TokenType::ASCEND, identifier); 
+    if (identifier == "descend") return Token(TokenType::DESCEND, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);
 }
 
 
+// parseNumber() to handle negative numbers
 Token Lexer::parseNumber() {
-    std::string number = "";
+    std::string number;
+    // Check for negative sign
+    if (currentChar == '-') {
+        number += currentChar;
+        advance();
+    }
     while (isDigit(currentChar)) {
         number += currentChar;
         advance();
