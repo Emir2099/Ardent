@@ -2,6 +2,7 @@
 #include <iostream>
 #include "lexer.h"
 #include "parser.h"
+#include <functional>
 #include <memory>
 #include <vector>
 #include <variant>
@@ -338,14 +339,60 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         } else {
             return std::to_string(evaluateExpr(expr));
         }
+    } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
+        // Pretty boolean output for NOT expressions
+        int v = evaluateExpr(expr);
+        return v != 0 ? std::string("True") : std::string("False");
     } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
-        std::string left = evaluatePrintExpr(binExpr->left);
-        std::string right = evaluatePrintExpr(binExpr->right);
-        // Insert a space between left and right if needed.
-        if (!left.empty() && left.back() != ' ') {
-            left.push_back(' ');
+        // Logical and comparison expressions -> pretty boolean output
+        if (binExpr->op.type == TokenType::AND || binExpr->op.type == TokenType::OR ||
+            binExpr->op.type == TokenType::SURPASSETH || binExpr->op.type == TokenType::REMAINETH ||
+            binExpr->op.type == TokenType::EQUAL || binExpr->op.type == TokenType::NOT_EQUAL ||
+            binExpr->op.type == TokenType::GREATER || binExpr->op.type == TokenType::LESSER) {
+            int v = evaluateExpr(expr);
+            return v != 0 ? std::string("True") : std::string("False");
         }
-        return left + right;
+        // Handle '+' with coercion rules
+        if (binExpr->op.type == TokenType::OPERATOR && binExpr->op.value == "+") {
+            std::function<bool(const std::shared_ptr<ASTNode>&)> isStringNode;
+            isStringNode = [&](const std::shared_ptr<ASTNode>& n) -> bool {
+                if (auto e = std::dynamic_pointer_cast<Expression>(n)) {
+                    if (e->token.type == TokenType::STRING) return true;
+                    if (e->token.type == TokenType::IDENTIFIER) {
+                        auto it = variables.find(e->token.value);
+                        if (it != variables.end() && std::holds_alternative<std::string>(it->second)) return true;
+                    }
+                }
+                if (auto b = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                    if (b->op.type == TokenType::OPERATOR && b->op.value == "+") {
+                        return isStringNode(b->left) || isStringNode(b->right);
+                    }
+                }
+                return false;
+            };
+            bool stringy = isStringNode(binExpr->left) || isStringNode(binExpr->right);
+            if (stringy) {
+                std::string left = evaluatePrintExpr(binExpr->left);
+                std::string right = evaluatePrintExpr(binExpr->right);
+                bool leftEndsSpace = !left.empty() && left.back() == ' ';
+                bool rightStartsSpace = !right.empty() && right.front() == ' ';
+                if (!leftEndsSpace && !rightStartsSpace) {
+                    left.push_back(' ');
+                }
+                // If both sides already have a boundary space, collapse to a single space
+                if (!left.empty() && !right.empty() && left.back() == ' ' && right.front() == ' ') {
+                    right.erase(0, 1);
+                }
+                return left + right;
+            } else {
+                // numeric domain (+): number + number, number + truth, truth + number
+                int sum = evaluateExpr(binExpr->left) + evaluateExpr(binExpr->right);
+                return std::to_string(sum);
+            }
+        }
+        // Other arithmetic ops: evaluate then print as number
+        int v = evaluateExpr(expr);
+        return std::to_string(v);
     }
     return "";
 }

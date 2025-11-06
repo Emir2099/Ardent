@@ -121,7 +121,36 @@ int main() {
 Let it be known throughout the land, a phrase named greeting is of "Hello".\
 Let it be proclaimed: greeting + " world"\
 )",
-            "Hello  world" // current interpreter inserts an extra space when concatenating
+            "Hello world"
+        },
+        {
+            "phrase_plus_truth",
+            R"(\
+Let it be proclaimed: "The truth is " + True\
+)",
+            "The truth is True"
+        },
+        {
+            "phrase_plus_number",
+            R"(\
+Let it be proclaimed: "Age: " + 25\
+)",
+            "Age: 25"
+        },
+        {
+            "number_plus_truth_addition",
+            R"(\
+Let it be known throughout the land, a number named a is of 5 winters.\
+Let it be proclaimed: a + True\
+)",
+            "6"
+        },
+        {
+            "number_plus_phrase_right",
+            R"(\
+Let it be proclaimed: 7 + "apples"\
+)",
+            "7 apples"
         },
         {
             "type_mismatch_number_with_string",
