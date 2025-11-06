@@ -691,8 +691,17 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
                 current = save; // restore
             }
         }
-        // Otherwise, just treat a bare expression as a print statement
+        // Otherwise, parse a bare expression, but guard against illegal assignment into collections
         auto expr = parseExpression();
+        if (!isAtEnd() && peek().type == TokenType::IS_OF) {
+            // Attempt to assign outside declaration; if LHS is an index expression, enforce immutability rule
+            if (std::dynamic_pointer_cast<IndexExpression>(expr)) {
+                std::cerr << "Error: Immutable rite: one may not assign into an order or tome; speak 'expand' or 'amend' instead." << std::endl;
+            } else {
+                std::cerr << "Error: Assignment outside declaration is not supported." << std::endl;
+            }
+            return nullptr;
+        }
         return std::make_shared<PrintStatement>(expr);
     } else {
         std::cerr << "Error: Unexpected token '" << peek().value << "' at position " << current << std::endl;

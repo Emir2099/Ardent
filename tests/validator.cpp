@@ -418,6 +418,28 @@ Let it be proclaimed: hero["title"]\
         }
         ,
         {
+            "immutable_order_index_assignment_parse_error",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+heroes[1] is of "Faramir"\
+)",
+            "",
+            true,
+            "Immutable rite: one may not assign into an order or tome"
+        }
+        ,
+        {
+            "immutable_tome_key_assignment_parse_error",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {name: "Aragorn", title: "King of Gondor"}.\
+hero["title"] is of "High King"\
+)",
+            "",
+            true,
+            "Immutable rite: one may not assign into an order or tome"
+        }
+        ,
+        {
             "order_index_out_of_bounds_runtime_error",
             R"(\
 Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
