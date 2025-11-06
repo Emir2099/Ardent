@@ -7,6 +7,7 @@
 
 int main() {
     std::string input =  R"(
+    # Previous demo code
     Let it be known throughout the land, a number named ct is of 0 winters.  
     Let it be known throughout the land, a number named count is of -3 winters.
     Let it be known throughout the land, a phrase named greeting is of "Hello, world!".  
@@ -33,8 +34,15 @@ int main() {
     Should the fates decree that x is greater than 3 then Let it be proclaimed: "x>3" Else whisper "x<=3"
     Should the fates decree that x is lesser than 10 then Let it be proclaimed: "x<10" Else whisper "x>=10"
 
-    Let it be known throughout the land, a number named ct2 is of "hellp" winters.  
-    Let it be known throughout the land, a truth named brave is of 32.
+
+    Let it be known throughout the land, a number named n is of 25 winters.
+    Let it be known throughout the land, a phrase named msg is of "The number is ".
+    Let it be proclaimed: msg + cast n as phrase
+
+    Let it be known throughout the land, a truth named nonzero is of cast n as truth.
+    Let it be proclaimed: nonzero
+
+    Let it be proclaimed: cast True as number
     )";
     
 

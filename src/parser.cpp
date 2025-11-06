@@ -78,6 +78,9 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
         auto operand = parseUnary();
         return std::make_shared<UnaryExpression>(op, operand);
     }
+    if (!isAtEnd() && (peek().type == TokenType::CAST || (peek().type == TokenType::IDENTIFIER && peek().value == "cast"))) {
+        return parseCast();
+    }
     return parsePrimary();
 }
 
@@ -134,6 +137,34 @@ std::shared_ptr<ASTNode> Parser::parseComparison() {
     return left;
 }
 
+// cast <expr> as <type>
+std::shared_ptr<ASTNode> Parser::parseCast() {
+    // consume 'cast'
+    if (peek().type == TokenType::CAST || (peek().type == TokenType::IDENTIFIER && peek().value == "cast")) {
+        advance();
+    } else {
+        return nullptr;
+    }
+    auto operand = parseUnary();
+    // expect 'as'
+    if (!(peek().type == TokenType::AS || (peek().type == TokenType::IDENTIFIER && peek().value == "as"))) {
+        std::cerr << "Error: Expected 'as' in cast expression" << std::endl;
+        return nullptr;
+    }
+    advance();
+    // expect type identifier: phrase | truth | number
+    Token typeTok = consume(TokenType::IDENTIFIER, "Expected type name after 'as'");
+    CastTarget target = CastTarget::ToPhrase;
+    if (typeTok.value == "phrase") target = CastTarget::ToPhrase;
+    else if (typeTok.value == "truth") target = CastTarget::ToTruth;
+    else if (typeTok.value == "number") target = CastTarget::ToNumber;
+    else {
+        std::cerr << "Error: Unknown cast target type '" << typeTok.value << "'" << std::endl;
+        return nullptr;
+    }
+    return std::make_shared<CastExpression>(operand, target);
+}
+
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
     if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
@@ -150,8 +181,8 @@ std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std:
         Token opToken = peek();
         if (opToken.type != TokenType::OPERATOR) break;
         advance();
-
-        auto right = parsePrimary();
+        // Allow full unary expressions on the right (supports cast, not, literals, identifiers)
+        auto right = parseUnary();
         left = std::make_shared<BinaryExpression>(left, opToken, right);
     }
     return left;
@@ -269,49 +300,62 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     }
     Token varName = consume(TokenType::IDENTIFIER, "Expected variable name after 'named'");
     consume(TokenType::IS_OF, "Expected 'is of' after variable name");
-    // Accept either STRING or NUMBER (with optional leading '-')
+    // Accept either a literal (STRING/BOOLEAN/NUMBER) or a full expression (supports +, cast, etc.)
+    std::shared_ptr<ASTNode> rhsNode;
+    bool simpleLiteral = false;
     Token value(TokenType::INVALID, "");
     if (peek().type == TokenType::STRING) {
-        value = advance();
+        value = advance(); simpleLiteral = true;
+        rhsNode = std::make_shared<Expression>(value);
     } else if (peek().type == TokenType::BOOLEAN) {
-        value = advance();
+        value = advance(); simpleLiteral = true;
+        rhsNode = std::make_shared<Expression>(value);
     } else if (peek().type == TokenType::OPERATOR && peek().value == "-") {
-        // negative number literal
         advance();
         Token numTok = consume(TokenType::NUMBER, "Expected number after '-'");
-        value = Token(TokenType::NUMBER, "-" + numTok.value);
+        value = Token(TokenType::NUMBER, "-" + numTok.value); simpleLiteral = true;
+        rhsNode = std::make_shared<Expression>(value);
+    } else if (peek().type == TokenType::NUMBER) {
+        value = advance(); simpleLiteral = true;
+        rhsNode = std::make_shared<Expression>(value);
     } else {
-        value = consume(TokenType::NUMBER, "Expected a numeric value or string after 'is of'");
-        // Optional unit words like 'winters' or 'years' only apply to numeric declarations
-        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
-            std::string filler = peek().value;
-            if (filler == "winters" || filler == "years") {
-                advance();
-            }
+        rhsNode = parseExpression();
+        if (!rhsNode) {
+            std::cerr << "Error: Failed to parse expression after 'is of' at position " << current << std::endl;
+            return nullptr;
+        }
+    }
+    // Optional unit words like 'winters' or 'years' (ignore if present)
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+        std::string filler = peek().value;
+        if (filler == "winters" || filler == "years") {
+            advance();
         }
     }
 
-    // Enforce declared type, when known
-    auto mismatch = [&](const char* expected) {
-        std::cerr << "TypeError: Expected " << expected << " but got "
-                  << tokenTypeToString(value.type) << " for variable '" << varName.value << "'" << std::endl;
-    };
-    if (declared == DeclTy::Number && value.type != TokenType::NUMBER) {
-        mismatch("number");
-        return nullptr;
-    }
-    if (declared == DeclTy::Phrase && value.type != TokenType::STRING) {
-        mismatch("phrase");
-        return nullptr;
-    }
-    if (declared == DeclTy::Truth && value.type != TokenType::BOOLEAN) {
-        mismatch("truth");
-        return nullptr;
+    // Enforce declared type only for simple literal cases (expressions validated at runtime)
+    if (simpleLiteral) {
+        auto mismatch = [&](const char* expected) {
+            std::cerr << "TypeError: Expected " << expected << " but got "
+                      << tokenTypeToString(value.type) << " for variable '" << varName.value << "'" << std::endl;
+        };
+        if (declared == DeclTy::Number && value.type != TokenType::NUMBER) {
+            mismatch("number");
+            return nullptr;
+        }
+        if (declared == DeclTy::Phrase && value.type != TokenType::STRING) {
+            mismatch("phrase");
+            return nullptr;
+        }
+        if (declared == DeclTy::Truth && value.type != TokenType::BOOLEAN) {
+            mismatch("truth");
+            return nullptr;
+        }
     }
     return std::make_shared<BinaryExpression>(
         std::make_shared<Expression>(varName),
         Token(TokenType::IS_OF, "is of"),
-        std::make_shared<Expression>(value)
+        rhsNode
     );
 }
 

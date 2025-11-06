@@ -21,6 +21,7 @@ private:
     std::shared_ptr<ASTNode> parseOr();
     std::shared_ptr<ASTNode> parseAnd();
     std::shared_ptr<ASTNode> parseUnary();
+    std::shared_ptr<ASTNode> parseCast();
     std::shared_ptr<ASTNode> parseComparison();
     std::shared_ptr<ASTNode> parseSimpleCondition(); 
     std::shared_ptr<ASTNode> parseIfStatement();

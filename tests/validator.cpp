@@ -355,6 +355,30 @@ Let it be known throughout the land, a truth named cunning is of True.\
 Should the fates decree brave and not strong or False then Let it be proclaimed: "pass" Else whisper "fail"\
 )",
             "pass"
+        },
+        {
+            "cast_to_phrase_in_concat",
+            R"(\
+Let it be known throughout the land, a number named n is of 25 winters.\
+Let it be proclaimed: "The number is " + cast n as phrase\
+)",
+            "The number is 25"
+        },
+        {
+            "cast_number_to_truth_assignment",
+            R"(\
+Let it be known throughout the land, a number named n is of 5 winters.\
+Let it be known throughout the land, a truth named nonzero is of cast n as truth.\
+Let it be proclaimed: nonzero\
+)",
+            "True"
+        },
+        {
+            "cast_truth_to_number_print",
+            R"(\
+Let it be proclaimed: cast True as number\
+)",
+            "1"
         }
     };
 

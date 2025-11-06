@@ -57,6 +57,94 @@ std::string Interpreter::getStringVariable(const std::string& name) {
     return "";
 }
 
+// Evaluate an expression into a typed Value (int, string, bool)
+Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
+    // Literal or identifier
+    if (auto e = std::dynamic_pointer_cast<Expression>(expr)) {
+        switch (e->token.type) {
+            case TokenType::NUMBER:
+                return std::stoi(e->token.value);
+            case TokenType::STRING:
+                return e->token.value;
+            case TokenType::BOOLEAN:
+                return e->token.value == "True";
+            case TokenType::IDENTIFIER: {
+                auto it = variables.find(e->token.value);
+                if (it != variables.end()) return it->second;
+                std::cerr << "Error: Undefined variable '" << e->token.value << "'" << std::endl;
+                return 0;
+            }
+            default:
+                break;
+        }
+    }
+    // Cast
+    if (auto c = std::dynamic_pointer_cast<CastExpression>(expr)) {
+        Value v = evaluateValue(c->operand);
+        if (c->target == CastTarget::ToPhrase) {
+            if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+            if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+            return std::string("");
+        } else if (c->target == CastTarget::ToTruth) {
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v);
+            if (std::holds_alternative<int>(v)) return std::get<int>(v) != 0;
+            if (std::holds_alternative<std::string>(v)) return !std::get<std::string>(v).empty();
+            return false;
+        } else { // ToNumber
+            if (std::holds_alternative<int>(v)) return std::get<int>(v);
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+            if (std::holds_alternative<std::string>(v)) {
+                try {
+                    return std::stoi(std::get<std::string>(v));
+                } catch (...) {
+                    std::cerr << "CastError: cannot convert phrase to number, defaulting to 0" << std::endl;
+                    return 0;
+                }
+            }
+            return 0;
+        }
+    }
+    // Unary NOT and other cases -> compute numerically and infer type
+    if (std::dynamic_pointer_cast<UnaryExpression>(expr) || std::dynamic_pointer_cast<BinaryExpression>(expr)) {
+        // Determine if boolean-style by operator types
+        if (auto u = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
+            if (u->op.type == TokenType::NOT) {
+                int v = evaluateExpr(expr);
+                return v != 0;
+            }
+        }
+        if (auto b = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
+            if (b->op.type == TokenType::AND || b->op.type == TokenType::OR ||
+                b->op.type == TokenType::SURPASSETH || b->op.type == TokenType::REMAINETH ||
+                b->op.type == TokenType::EQUAL || b->op.type == TokenType::NOT_EQUAL ||
+                b->op.type == TokenType::GREATER || b->op.type == TokenType::LESSER) {
+                int v = evaluateExpr(expr);
+                return v != 0;
+            }
+            if (b->op.type == TokenType::OPERATOR && b->op.value == "+") {
+                // String dominance: if stringy, return phrase
+                // Reuse evaluatePrintExpr for correct concatenation spacing
+                // Detect stringy by checking print domain
+                // Conservative: if either side yields string in evaluateValue, treat as string
+                Value lv = evaluateValue(b->left);
+                Value rv = evaluateValue(b->right);
+                if (std::holds_alternative<std::string>(lv) || std::holds_alternative<std::string>(rv)) {
+                    return evaluatePrintExpr(expr);
+                }
+                // Otherwise numeric sum
+                int sum = evaluateExpr(expr);
+                return sum;
+            }
+        }
+        // Fallback numeric
+        int n = evaluateExpr(expr);
+        return n;
+    }
+    // Unknown node type
+    return 0;
+}
+
 int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
     if (auto numExpr = std::dynamic_pointer_cast<Expression>(expr)) {
         if (numExpr->token.type == TokenType::IDENTIFIER) {
@@ -65,6 +153,26 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             return std::stoi(numExpr->token.value);
         } else if (numExpr->token.type == TokenType::BOOLEAN) {
             return (numExpr->token.value == "True") ? 1 : 0;
+        }
+    } else if (auto castExpr = std::dynamic_pointer_cast<CastExpression>(expr)) {
+        // Evaluate cast in numeric domain
+        Value v = evaluateValue(castExpr->operand);
+        switch (castExpr->target) {
+            case CastTarget::ToNumber:
+                if (std::holds_alternative<int>(v)) return std::get<int>(v);
+                if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+                if (std::holds_alternative<std::string>(v)) {
+                    try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; }
+                }
+                break;
+            case CastTarget::ToTruth:
+                if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+                if (std::holds_alternative<int>(v)) return std::get<int>(v) != 0 ? 1 : 0;
+                if (std::holds_alternative<std::string>(v)) return !std::get<std::string>(v).empty() ? 1 : 0;
+                break;
+            case CastTarget::ToPhrase:
+                // In numeric context, phrase has no numeric value; return 0
+                return 0;
         }
     } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
         int val = evaluateExpr(unary->operand);
@@ -140,31 +248,12 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         // For assignments: operator IS_OF.
         if (binExpr->op.type == TokenType::IS_OF) {
             auto leftExpr = std::dynamic_pointer_cast<Expression>(binExpr->left);
-            auto rightExpr = std::dynamic_pointer_cast<Expression>(binExpr->right);
-            if (leftExpr && rightExpr) {
+            if (leftExpr) {
                 std::string varName = leftExpr->token.value;
-                if (rightExpr->token.type == TokenType::NUMBER) {
-                    int value = std::stoi(rightExpr->token.value);
-                    assignVariable(varName, value);
-                } else if (rightExpr->token.type == TokenType::STRING) {
-                    assignVariable(varName, rightExpr->token.value);
-                } else if (rightExpr->token.type == TokenType::BOOLEAN) {
-                    assignVariable(varName, rightExpr->token.value == "True");
-                } else if (rightExpr->token.type == TokenType::IDENTIFIER) {
-                    // Assignment from another variable
-                    auto it = variables.find(rightExpr->token.value);
-                    if (it != variables.end()) {
-                        if (std::holds_alternative<int>(it->second)) {
-                            assignVariable(varName, std::get<int>(it->second));
-                        } else if (std::holds_alternative<std::string>(it->second)) {
-                            assignVariable(varName, std::get<std::string>(it->second));
-                        } else if (std::holds_alternative<bool>(it->second)) {
-                            assignVariable(varName, std::get<bool>(it->second));
-                        }
-                    } else {
-                        std::cerr << "Error: Undefined variable '" << rightExpr->token.value << "'" << std::endl;
-                    }
-                }
+                Value rhs = evaluateValue(binExpr->right);
+                if (std::holds_alternative<int>(rhs)) assignVariable(varName, std::get<int>(rhs));
+                else if (std::holds_alternative<std::string>(rhs)) assignVariable(varName, std::get<std::string>(rhs));
+                else if (std::holds_alternative<bool>(rhs)) assignVariable(varName, std::get<bool>(rhs));
             }
         } else {
             // Otherwise, simply execute left and right.
@@ -339,6 +428,18 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         } else {
             return std::to_string(evaluateExpr(expr));
         }
+    } else if (auto castExpr = std::dynamic_pointer_cast<CastExpression>(expr)) {
+        if (castExpr->target == CastTarget::ToPhrase) {
+            Value v = evaluateValue(castExpr->operand);
+            if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+            if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+            return std::string("");
+        } else {
+            // For number/truth casts, print numeric truthiness
+            int v = evaluateExpr(expr);
+            return std::to_string(v);
+        }
     } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
         // Pretty boolean output for NOT expressions
         int v = evaluateExpr(expr);
@@ -362,6 +463,9 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
                         auto it = variables.find(e->token.value);
                         if (it != variables.end() && std::holds_alternative<std::string>(it->second)) return true;
                     }
+                }
+                if (auto c = std::dynamic_pointer_cast<CastExpression>(n)) {
+                    if (c->target == CastTarget::ToPhrase) return true;
                 }
                 if (auto b = std::dynamic_pointer_cast<BinaryExpression>(n)) {
                     if (b->op.type == TokenType::OPERATOR && b->op.value == "+") {

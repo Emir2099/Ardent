@@ -38,6 +38,16 @@ public:
         : op(op), operand(operand) {}
 };
 
+// Represents an explicit cast: cast <expr> as <type>
+enum class CastTarget { ToNumber, ToPhrase, ToTruth };
+class CastExpression : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> operand;
+    CastTarget target;
+    CastExpression(std::shared_ptr<ASTNode> operand, CastTarget target)
+        : operand(std::move(operand)), target(target) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

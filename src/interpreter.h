@@ -12,6 +12,7 @@ private:
     std::unordered_map<std::string, Value> variables; // Stores variables and their values
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
+    Value evaluateValue(std::shared_ptr<ASTNode> expr);
 public:
     void execute(std::shared_ptr<ASTNode> ast);
     void evaluateExpression(std::shared_ptr<ASTNode> expr);

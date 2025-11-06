@@ -148,6 +148,8 @@ Token Lexer::parseIdentifier() {
     if (identifier == "and") return Token(TokenType::AND, identifier);
     if (identifier == "or") return Token(TokenType::OR, identifier);
     if (identifier == "not") return Token(TokenType::NOT, identifier);
+    if (identifier == "cast") return Token(TokenType::CAST, identifier);
+    if (identifier == "as") return Token(TokenType::AS, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);
