@@ -27,15 +27,17 @@ bool Lexer::isDigit(char c) {
 }
 
 Token Lexer::parseLet() {
-    std::string phrase = "Let it be known";
-    size_t phraseLen = phrase.length();
-
-    // Remove the "-1" from substr check
-    if (input.substr(currentPos, phraseLen) == phrase) {
-        currentPos += phraseLen;
+    // Accept variations in spacing and case for the proclamation header
+    // Pattern: "let it be known" with one or more spaces between words, case-insensitive
+    static const std::regex pattern("^let\\s+it\\s+be\\s+known", std::regex_constants::icase);
+    std::smatch m;
+    std::string remaining = input.substr(currentPos);
+    if (std::regex_search(remaining, m, pattern)) {
+        // Advance by matched length
+        currentPos += static_cast<size_t>(m.length());
         if (currentPos < input.length()) currentChar = input[currentPos];
         else currentChar = '\0';
-        return Token(TokenType::LET, phrase);
+        return Token(TokenType::LET, "Let it be known");
     }
 
     std::cerr << "Error: Expected 'Let it be known' at position " << currentPos << std::endl;
@@ -178,11 +180,18 @@ std::vector<Token> Lexer::tokenize() {
             advance();
         }
         // Multi-word phrases
-        else if (input.substr(currentPos, 15) == "Let it be known") {
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+it\\s+be\\s+known", std::regex_constants::icase))) {
             tokens.push_back(parseLet());
         }
         else if (input.substr(currentPos, 14) == "a number named") {
             tokens.push_back(parseNamed());
+        }
+        else if (input.substr(currentPos, 14) == "a phrase named") {
+            // Treat phrase declarations similar to number declarations at lexing stage
+            tokens.push_back(Token(TokenType::NAMED, "a phrase named"));
+            currentPos += 14;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
         }
         else if (input.substr(currentPos, 5) == "is of") {
             tokens.push_back(parseIsOf());
@@ -195,6 +204,24 @@ std::vector<Token> Lexer::tokenize() {
         }
         else if (input.substr(currentPos, 12) == "is cast upon") {
             tokens.push_back(parseIsCastUpon());
+        }
+        else if (input.substr(currentPos, 21) == "Let it be proclaimed:") {
+            tokens.push_back(Token(TokenType::LET_PROCLAIMED, "Let it be proclaimed"));
+            currentPos += 21;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 20) == "Let it be proclaimed") {
+            tokens.push_back(Token(TokenType::LET_PROCLAIMED, "Let it be proclaimed"));
+            currentPos += 20;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 21) == "let it be proclaimed:") {
+            tokens.push_back(Token(TokenType::LET_PROCLAIMED, "let it be proclaimed"));
+            currentPos += 21;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
         }
         else if (input.substr(currentPos, 20) == "let it be proclaimed") {
             tokens.push_back(parseLetProclaimed());

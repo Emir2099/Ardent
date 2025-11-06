@@ -8,7 +8,9 @@
 int main() {
     std::string input =  R"(
     Let it be known throughout the land, a number named ct is of 0 winters.  
-    Let it be known throughout the land, a number named count is of -3 winters.  
+    Let it be known throughout the land, a number named count is of -3 winters.
+    Let it be known throughout the land, a phrase named greeting is of "Hello, world!".  
+    Let it be proclaimed: greeting + " How art thou?"
     )";
     
 

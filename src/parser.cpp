@@ -155,20 +155,38 @@ std::shared_ptr<ASTNode> Parser::parseFunctionCall() {
 // Parse a variable declaration.
 // After encountering LET, skip filler tokens until we find NAMED.
 std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
-    while (!isAtEnd() && peek().type != TokenType::NAMED) {
+    // Skip until we find either a NAMED token or identifier 'named'
+    while (!isAtEnd() && !(peek().type == TokenType::NAMED || (peek().type == TokenType::IDENTIFIER && peek().value == "named"))) {
         advance();
     }
-    if (!match(TokenType::NAMED)) {
+    // Consume NAMED (either as token or identifier value)
+    if (peek().type == TokenType::NAMED) {
+        advance();
+    } else if (peek().type == TokenType::IDENTIFIER && peek().value == "named") {
+        advance();
+    } else {
         std::cerr << "Error: Expected 'named' after 'Let it be known' at position " << current << std::endl;
         return nullptr;
     }
     Token varName = consume(TokenType::IDENTIFIER, "Expected variable name after 'named'");
     consume(TokenType::IS_OF, "Expected 'is of' after variable name");
-    Token value = consume(TokenType::NUMBER, "Expected a numeric value after 'is of'");
-    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
-        std::string filler = peek().value;
-        if (filler == "winters" || filler == "years") {
-            advance();
+    // Accept either STRING or NUMBER (with optional leading '-')
+    Token value(TokenType::INVALID, "");
+    if (peek().type == TokenType::STRING) {
+        value = advance();
+    } else if (peek().type == TokenType::OPERATOR && peek().value == "-") {
+        // negative number literal
+        advance();
+        Token numTok = consume(TokenType::NUMBER, "Expected number after '-'");
+        value = Token(TokenType::NUMBER, "-" + numTok.value);
+    } else {
+        value = consume(TokenType::NUMBER, "Expected a numeric value or string after 'is of'");
+        // Optional unit words like 'winters' or 'years' only apply to numeric declarations
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+            std::string filler = peek().value;
+            if (filler == "winters" || filler == "years") {
+                advance();
+            }
         }
     }
     return std::make_shared<BinaryExpression>(
@@ -406,6 +424,28 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (peek().type == TokenType::STRING ||
                peek().type == TokenType::NUMBER ||
                peek().type == TokenType::IDENTIFIER) {
+        // Special-case: if upcoming identifiers are 'it be proclaimed', treat as a print statement header
+        // This allows handling when lexer doesn't emit LET_PROCLAIMED
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "it") {
+            size_t save = current;
+            // expect: it be proclaimed
+            bool ok = true;
+            std::vector<std::string> seq = {"it","be","proclaimed"};
+            for (const auto& w : seq) {
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == w) {
+                    advance();
+                } else {
+                    ok = false; break;
+                }
+            }
+            if (ok) {
+                auto expr = parseExpression();
+                return std::make_shared<PrintStatement>(expr);
+            } else {
+                current = save; // restore
+            }
+        }
+        // Otherwise, just treat a bare expression as a print statement
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
     } else {

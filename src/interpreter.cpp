@@ -4,25 +4,51 @@
 #include "parser.h"
 #include <memory>
 #include <vector>
+#include <variant>
 
-void Interpreter::assignVariable(std::string name, int value) {
+void Interpreter::assignVariable(const std::string& name, int value) {
     variables[name] = value;
     std::cout << "Variable assigned: " << name << " = " << value << std::endl;
 }
 
-int Interpreter::getVariable(std::string name) {
-    if (variables.find(name) != variables.end()) {
-        return variables[name];
+void Interpreter::assignVariable(const std::string& name, const std::string& value) {
+    variables[name] = value;
+    std::cout << "Variable assigned: " << name << " = " << value << std::endl;
+}
+
+int Interpreter::getIntVariable(const std::string& name) {
+    auto it = variables.find(name);
+    if (it != variables.end()) {
+        if (std::holds_alternative<int>(it->second)) {
+            return std::get<int>(it->second);
+        }
+        std::cerr << "Error: Variable '" << name << "' is not a number" << std::endl;
     } else {
         std::cerr << "Error: Undefined variable '" << name << "'" << std::endl;
-        return 0;
     }
+    return 0;
+}
+
+std::string Interpreter::getStringVariable(const std::string& name) {
+    auto it = variables.find(name);
+    if (it != variables.end()) {
+        if (std::holds_alternative<std::string>(it->second)) {
+            return std::get<std::string>(it->second);
+        }
+        // If it's an int, convert to string (useful for printing)
+        if (std::holds_alternative<int>(it->second)) {
+            return std::to_string(std::get<int>(it->second));
+        }
+    } else {
+        std::cerr << "Error: Undefined variable '" << name << "'" << std::endl;
+    }
+    return "";
 }
 
 int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
     if (auto numExpr = std::dynamic_pointer_cast<Expression>(expr)) {
         if (numExpr->token.type == TokenType::IDENTIFIER) {
-            return getVariable(numExpr->token.value);
+            return getIntVariable(numExpr->token.value);
         } else if (numExpr->token.type == TokenType::NUMBER) {
             return std::stoi(numExpr->token.value);
         }
@@ -85,8 +111,24 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             auto rightExpr = std::dynamic_pointer_cast<Expression>(binExpr->right);
             if (leftExpr && rightExpr) {
                 std::string varName = leftExpr->token.value;
-                int value = std::stoi(rightExpr->token.value);
-                assignVariable(varName, value);
+                if (rightExpr->token.type == TokenType::NUMBER) {
+                    int value = std::stoi(rightExpr->token.value);
+                    assignVariable(varName, value);
+                } else if (rightExpr->token.type == TokenType::STRING) {
+                    assignVariable(varName, rightExpr->token.value);
+                } else if (rightExpr->token.type == TokenType::IDENTIFIER) {
+                    // Assignment from another variable
+                    auto it = variables.find(rightExpr->token.value);
+                    if (it != variables.end()) {
+                        if (std::holds_alternative<int>(it->second)) {
+                            assignVariable(varName, std::get<int>(it->second));
+                        } else {
+                            assignVariable(varName, std::get<std::string>(it->second));
+                        }
+                    } else {
+                        std::cerr << "Error: Undefined variable '" << rightExpr->token.value << "'" << std::endl;
+                    }
+                }
             }
         } else {
             // Otherwise, simply execute left and right.
@@ -103,7 +145,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             auto leftExpr = std::dynamic_pointer_cast<Expression>(condBinExpr->left);
             auto rightExpr = std::dynamic_pointer_cast<Expression>(condBinExpr->right);
             if (leftExpr && rightExpr) {
-                int varValue = getVariable(leftExpr->token.value);
+                int varValue = getIntVariable(leftExpr->token.value);
                 int condValue = std::stoi(rightExpr->token.value);
                 if (condBinExpr->op.value == "surpasseth" && varValue > condValue) {
                     execute(ifStmt->thenBranch);
@@ -151,7 +193,7 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
     }
 
     while (true) {
-        int currentVal = variables[varName];
+    int currentVal = getIntVariable(varName);
         bool conditionMet;
         switch (loop->comparisonOp) {
             case TokenType::SURPASSETH:
@@ -174,9 +216,9 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
 
         // Update variable
         if (loop->stepDirection == TokenType::DESCEND) {
-            variables[varName] -= stepVal;
+            variables[varName] = getIntVariable(varName) - stepVal;
         } else {
-            variables[varName] += stepVal;
+            variables[varName] = getIntVariable(varName) + stepVal;
         }
     }
 }
@@ -186,18 +228,18 @@ void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
     // Initialize loop variable 
     std::string varName;
     if (auto expr = std::dynamic_pointer_cast<Expression>(loop->init)) {
-        varName = expr->token.value;
-        variables[varName] = evaluateExpr(loop->init);
+    varName = expr->token.value;
+    variables[varName] = evaluateExpr(loop->init);
     }
 
     // Loop while condition holds
     while (evaluateExpr(loop->condition)) {
         // Execute the loop body (BlockStatement)
         execute(loop->body);
-        int stepVal = evaluateExpr(loop->increment);
-        if (loop->stepDirection == TokenType::DESCEND) stepVal = -stepVal;
-        // Increment loop variable
-        variables[varName] += stepVal;
+    int stepVal = evaluateExpr(loop->increment);
+    if (loop->stepDirection == TokenType::DESCEND) stepVal = -stepVal;
+    // Increment loop variable
+    variables[varName] = getIntVariable(varName) + stepVal;
     }
 }
 
@@ -217,7 +259,7 @@ void Interpreter::executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop) {
         if (loop->update) {
             int inc = evaluateExpr(loop->update);
             if (loop->stepDirection == TokenType::DESCEND) inc = -inc;
-            variables[varName] += inc;
+            variables[varName] = getIntVariable(varName) + inc;
         }
     } while (evaluateExpr(loop->condition)); // Loop while condition is TRUE
 }
@@ -230,7 +272,11 @@ void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
         if (value->token.type == TokenType::IDENTIFIER) {
             std::string varName = value->token.value;
             if (variables.find(varName) != variables.end()) {
-                std::cout << "valueeee: " << variables[varName] << std::endl;  
+                if (std::holds_alternative<int>(variables[varName])) {
+                    std::cout << "valueeee: " << std::get<int>(variables[varName]) << std::endl;  
+                } else {
+                    std::cout << "valueeee: " << std::get<std::string>(variables[varName]) << std::endl;  
+                }
             } else {
                 std::cerr << "Error: Undefined variable '" << varName << "'" << std::endl;
             }
@@ -245,6 +291,19 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
     if (auto strExpr = std::dynamic_pointer_cast<Expression>(expr)) {
         if (strExpr->token.type == TokenType::STRING) {
             return strExpr->token.value;
+        } else if (strExpr->token.type == TokenType::IDENTIFIER) {
+            // Return string value for identifiers if present, otherwise number-as-string
+            auto it = variables.find(strExpr->token.value);
+            if (it != variables.end()) {
+                if (std::holds_alternative<std::string>(it->second)) {
+                    return std::get<std::string>(it->second);
+                }
+                if (std::holds_alternative<int>(it->second)) {
+                    return std::to_string(std::get<int>(it->second));
+                }
+            }
+            std::cerr << "Error: Undefined variable '" << strExpr->token.value << "'" << std::endl;
+            return "";
         } else {
             return std::to_string(evaluateExpr(expr));
         }
