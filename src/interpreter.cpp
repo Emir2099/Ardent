@@ -494,6 +494,40 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             variables[rite->varName] = mp;
         }
     }
+    else if (auto spellDef = std::dynamic_pointer_cast<SpellStatement>(ast)) {
+        // Register spell
+        spells[spellDef->spellName] = {spellDef->params, spellDef->body};
+    }
+    else if (auto invoke = std::dynamic_pointer_cast<SpellInvocation>(ast)) {
+        auto it = spells.find(invoke->spellName);
+        if (it == spells.end()) {
+            std::cerr << "Error: Unknown spell '" << invoke->spellName << "'" << std::endl;
+            return;
+        }
+        const auto &def = it->second;
+        if (def.params.size() != invoke->args.size()) {
+            std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
+            return;
+        }
+        // Create local scope overlay: save old values of parameters if they exist
+        std::unordered_map<std::string, Value> previous;
+        for (size_t i = 0; i < def.params.size(); ++i) {
+            Value val = evaluateValue(invoke->args[i]);
+            // Save existing
+            auto vit = variables.find(def.params[i]);
+            if (vit != variables.end()) previous[def.params[i]] = vit->second;
+            variables[def.params[i]] = val;
+        }
+        // Execute body statements
+        for (auto &stmt : def.body->statements) {
+            execute(stmt);
+        }
+        // Restore previous values (shadowing semantics)
+        for (const auto &p : def.params) {
+            auto pit = previous.find(p);
+            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
+        }
+    }
     
 
 
@@ -728,7 +762,10 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
                 std::string right = evaluatePrintExpr(binExpr->right);
                 bool leftEndsSpace = !left.empty() && left.back() == ' ';
                 bool rightStartsSpace = !right.empty() && right.front() == ' ';
-                if (!leftEndsSpace && !rightStartsSpace) {
+                bool rightStartsPunct = (!right.empty() && std::string(",.;:)]}").find(right.front()) != std::string::npos);
+                // Insert a single space boundary when concatenating phrase-like parts,
+                // except when the right-hand side begins with punctuation.
+                if (!leftEndsSpace && !rightStartsSpace && !rightStartsPunct) {
                     left.push_back(' ');
                 }
                 // If both sides already have a boundary space, collapse to a single space

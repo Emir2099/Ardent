@@ -661,7 +661,11 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
 
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {
-    if (match(TokenType::LET)) {
+    if (match(TokenType::SPELL_DEF)) {
+        return parseSpellDefinition();
+    } else if (match(TokenType::SPELL_CALL)) {
+        return parseSpellInvocation();
+    } else if (match(TokenType::LET)) {
         // Peek ahead for collection rites: 'the order' / 'the tome' <name> verb ...
         size_t save = current;
         // Accept optional 'the'
@@ -783,4 +787,66 @@ std::shared_ptr<ASTNode> Parser::parse() {
         return nullptr;
     }
     return std::make_shared<BlockStatement>(statements);
+}
+
+// Parse a spell definition:
+// By decree of the elders, a spell named greet is cast upon a traveler known as name:
+//     <body statements>
+std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
+    // Expect optional comma after phrase already consumed as SPELL_DEF token.
+    // Consume optional 'a' or determiners until we reach SPELL_NAMED
+    while (!isAtEnd() && peek().type != TokenType::SPELL_NAMED) advance();
+    if (!match(TokenType::SPELL_NAMED)) { std::cerr << "Error: Expected 'spell named' in spell definition" << std::endl; return nullptr; }
+    Token spellName = consume(TokenType::IDENTIFIER, "Expected spell name after 'spell named'");
+    // Expect 'is cast upon'
+    if (!match(TokenType::SPELL_CAST)) { std::cerr << "Error: Expected 'is cast upon' in spell definition" << std::endl; return nullptr; }
+    // Parameter parsing: sequence of descriptor tokens ending with KNOWN_AS name pairs until ':'
+    std::vector<std::string> params;
+    while (!isAtEnd() && peek().type != TokenType::COLON) {
+        // Consume descriptor words until KNOWN_AS
+        while (!isAtEnd() && peek().type != TokenType::KNOWN_AS && peek().type != TokenType::COLON) {
+            advance();
+        }
+        if (peek().type == TokenType::COLON) break;
+        if (!match(TokenType::KNOWN_AS)) { std::cerr << "Error: Expected 'known as' before parameter name" << std::endl; return nullptr; }
+        Token paramName = consume(TokenType::IDENTIFIER, "Expected parameter name after 'known as'");
+        params.push_back(paramName.value);
+    }
+    consume(TokenType::COLON, "Expected ':' to start spell body");
+    // Parse indented body lines until next SPELL_DEF/SPELL_CALL or end. We'll accumulate statements until a blank or termination.
+    std::vector<std::shared_ptr<ASTNode>> bodyStmts;
+    while (!isAtEnd()) {
+        // Stop if next token begins another top-level construct
+        TokenType t = peek().type;
+        if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::LET || t == TokenType::SHOULD) {
+            break;
+        }
+        bodyStmts.push_back(parseStatement());
+    }
+    auto block = std::make_shared<BlockStatement>(bodyStmts);
+    return std::make_shared<SpellStatement>(spellName.value, params, block);
+}
+
+// Parse invocation: Invoke the spell greet upon "Aragorn".
+std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
+    // Expect spell name after SPELL_CALL
+    // skip optional whitespace/determiners until IDENTIFIER
+    while (!isAtEnd() && peek().type != TokenType::IDENTIFIER) advance();
+    Token nameTok = consume(TokenType::IDENTIFIER, "Expected spell name after 'Invoke the spell'");
+    consume(TokenType::UPON, "Expected 'upon' after spell name");
+    // Single or comma-separated arguments until period or LET or end
+    std::vector<std::shared_ptr<ASTNode>> args;
+    while (!isAtEnd()) {
+        // Stop on LET / SPELL_DEF / SPELL_CALL to avoid consuming next statement
+        TokenType t = peek().type;
+        if (t == TokenType::LET || t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL) break;
+        // Break if a structural token that likely ends argument list
+        if (t == TokenType::WHISPER || t == TokenType::SHOULD) break;
+        // Parse one arg expression
+        auto expr = parseExpression();
+        if (expr) args.push_back(expr); else break;
+        // Optional comma token
+        if (peek().type == TokenType::COMMA) advance(); else break;
+    }
+    return std::make_shared<SpellInvocation>(nameTok.value, args);
 }

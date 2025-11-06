@@ -539,6 +539,38 @@ Let it be proclaimed: heroes[-4]\
             true,
             "Error: None stand that far behind in the order, for only 3 dwell within."
         }
+        ,
+        {
+            "spell_single_param_greet",
+            R"(\
+By decree of the elders, a spell named greet is cast upon a traveler known as name:\
+Let it be proclaimed: "Hail, " + name\
+Invoke the spell greet upon "Aragorn"\
+)",
+            "Hail, Aragorn"
+        }
+        ,
+        {
+            "spell_two_params_bless",
+            R"(\
+By decree of the elders, a spell named bless is cast upon a warrior known as target, a gift known as item:\
+Let it be proclaimed: "Blessings upon " + target + ", bearer of " + item\
+Invoke the spell bless upon "Faramir", "the Horn of Gondor"\
+)",
+            "Blessings upon Faramir, bearer of the Horn of Gondor"
+        }
+        ,
+        {
+            "spell_unknown_invocation_runtime_error",
+            R"(\
+Invoke the spell unknown upon "Nobody"\
+)",
+            "",
+            false,
+            "",
+            true,
+            "Error: Unknown spell 'unknown'"
+        }
     };
 
     int passed = 0;

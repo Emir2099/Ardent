@@ -86,6 +86,26 @@ public:
         : riteType(t), varName(std::move(v)), keyExpr(std::move(key)), valueExpr(std::move(val)) {}
 };
 
+// Spell definition: stores name, parameter names, and body block
+class BlockStatement; // forward declaration for SpellStatement body reference
+class SpellStatement : public ASTNode {
+public:
+    std::string spellName;
+    std::vector<std::string> params;
+    std::shared_ptr<BlockStatement> body;
+    SpellStatement(std::string name, std::vector<std::string> params, std::shared_ptr<BlockStatement> body)
+        : spellName(std::move(name)), params(std::move(params)), body(std::move(body)) {}
+};
+
+// Spell invocation: call a previously defined spell with argument expressions
+class SpellInvocation : public ASTNode {
+public:
+    std::string spellName;
+    std::vector<std::shared_ptr<ASTNode>> args;
+    SpellInvocation(std::string name, std::vector<std::shared_ptr<ASTNode>> args)
+        : spellName(std::move(name)), args(std::move(args)) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

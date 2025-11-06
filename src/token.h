@@ -7,7 +7,7 @@
 enum class TokenType {
     LET, ERROR, IDENTIFIER, NUMBER, STRING, OPERATOR, 
     NAMED, IS_OF, SHOULD, FATES, DECREE, SURPASSETH, 
-    THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, 
+    THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, SPELL_DEF, SPELL_CAST, SPELL_CALL, UPON, KNOWN_AS,
     COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND,DESCEND,AND_WITH_EACH_DAWN,
     FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, CAST, AS,
     LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT,
@@ -65,6 +65,11 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::AMEND: return "AMEND";
         case TokenType::REMOVE: return "REMOVE";
         case TokenType::ERASE: return "ERASE";
+    case TokenType::SPELL_DEF: return "SPELL_DEF";
+    case TokenType::SPELL_CAST: return "SPELL_CAST";
+    case TokenType::SPELL_CALL: return "SPELL_CALL";
+    case TokenType::UPON: return "UPON";
+    case TokenType::KNOWN_AS: return "KNOWN_AS";
         default: return "UNKNOWN";
     }
 }

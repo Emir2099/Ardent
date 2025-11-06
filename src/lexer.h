@@ -23,9 +23,10 @@ private:
     Token parseIdentifier();
     Token parseNumber();
     Token parseString();
-    Token parseDecreeElders();
     Token parseSpellNamed();
+    Token parseDecreeElders();
     Token parseIsCastUpon();
+    Token parseSpellCall();
     Token parseLetProclaimed();
     Token parseGenericLet();
     // Read a raw identifier lexeme without mapping to keywords/booleans

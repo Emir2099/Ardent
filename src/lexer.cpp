@@ -117,7 +117,7 @@ Token Lexer::parseDecreeElders() {
         currentPos += len;
         if (currentPos < input.length()) currentChar = input[currentPos];
         else currentChar = '\0';
-        return Token(TokenType::DECREE_ELDERS, phrase);
+        return Token(TokenType::SPELL_DEF, phrase);
     }
     return Token(TokenType::ERROR, "Invalid DECREE_ELDERS");
 }
@@ -141,9 +141,21 @@ Token Lexer::parseIsCastUpon() {
         currentPos += len;
         if (currentPos < input.length()) currentChar = input[currentPos];
         else currentChar = '\0';
-        return Token(TokenType::CAST_UPON, phrase);
+        return Token(TokenType::SPELL_CAST, phrase);
     }
     return Token(TokenType::ERROR, "Invalid CAST_UPON");
+}
+
+Token Lexer::parseSpellCall() {
+    std::string phrase = "Invoke the spell";
+    size_t len = phrase.length();
+    if (input.substr(currentPos, len) == phrase) {
+        currentPos += len;
+        if (currentPos < input.length()) currentChar = input[currentPos];
+        else currentChar = '\0';
+        return Token(TokenType::SPELL_CALL, phrase);
+    }
+    return Token(TokenType::ERROR, "Invalid SPELL_CALL");
 }
 
 // identifier parser with keywords
@@ -298,6 +310,20 @@ std::vector<Token> Lexer::tokenize() {
         }
         else if (input.substr(currentPos, 12) == "is cast upon") {
             tokens.push_back(parseIsCastUpon());
+        }
+        else if (input.substr(currentPos, 16) == "Invoke the spell") {
+            tokens.push_back(parseSpellCall());
+        }
+        else if (input.substr(currentPos, 5) == "known") {
+            // match 'known as'
+            if (input.substr(currentPos, 8) == "known as") {
+                tokens.push_back(Token(TokenType::KNOWN_AS, "known as"));
+                currentPos += 8; currentChar = (currentPos < input.length()? input[currentPos] : '\0');
+            }
+        }
+        else if (input.substr(currentPos, 4) == "upon") {
+            tokens.push_back(Token(TokenType::UPON, "upon"));
+            currentPos += 4; currentChar = (currentPos < input.length()? input[currentPos] : '\0');
         }
         else if (input.substr(currentPos, 21) == "Let it be proclaimed:") {
             tokens.push_back(Token(TokenType::LET_PROCLAIMED, "Let it be proclaimed"));

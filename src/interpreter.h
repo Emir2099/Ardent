@@ -13,6 +13,9 @@ public:
     using Value = std::variant<int, std::string, bool, std::vector<SimpleValue>, std::unordered_map<std::string, SimpleValue>>;
 private:
     std::unordered_map<std::string, Value> variables; // Stores variables and their values
+    // Stored spells: name -> (param list, body)
+    struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
+    std::unordered_map<std::string, SpellDef> spells;
     bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);

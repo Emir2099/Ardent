@@ -74,6 +74,18 @@ int main() {
     Let it be proclaimed: "(After attempting to erase missing key)"
     Let the tome realm erase "lineage"
     Let it be proclaimed: realm
+
+    Let it be proclaimed: "--- Spell Demo ---"
+    By decree of the elders a spell named greet is cast upon a traveler known as name:
+        Let it be proclaimed: "Hail, noble " + name + "!"
+    Invoke the spell greet upon "Aragorn"
+    By decree of the elders a spell named bless is cast upon a warrior known as name:
+        Let it be proclaimed: "Blessings upon thee, " + name + "."
+    Invoke the spell bless upon "Faramir"
+    
+    By decree of the elders, a spell named bestow is cast upon a warrior known as target, a gift known as item:
+        Let it be proclaimed: "Blessings upon " + target + ", bearer of " + item
+    Invoke the spell bestow upon "Faramir", "the Horn of Gondor"
     )ARDENT";
     
 
