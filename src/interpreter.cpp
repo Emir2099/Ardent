@@ -6,6 +6,57 @@
 #include <memory>
 #include <vector>
 #include <variant>
+#include <sstream>
+
+// Helpers for pretty-printing values in narrative style
+static std::string escapeString(const std::string &s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\') out += "\\\\";
+        else if (c == '"') out += "\\\"";
+        else out.push_back(c);
+    }
+    return out;
+}
+
+static std::string formatSimple(const Interpreter::SimpleValue &sv) {
+    if (std::holds_alternative<int>(sv)) return std::to_string(std::get<int>(sv));
+    if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv) ? std::string("True") : std::string("False");
+    // phrase -> quoted with escaping
+    return std::string("\"") + escapeString(std::get<std::string>(sv)) + "\"";
+}
+
+static std::string formatValue(const Interpreter::Value &v) {
+    if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+    if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+    if (std::holds_alternative<std::string>(v)) return std::string("\"") + escapeString(std::get<std::string>(v)) + "\"";
+    if (std::holds_alternative<std::vector<Interpreter::SimpleValue>>(v)) {
+        const auto &vec = std::get<std::vector<Interpreter::SimpleValue>>(v);
+        std::ostringstream oss;
+        oss << "[ ";
+        for (size_t i = 0; i < vec.size(); ++i) {
+            if (i) oss << ", ";
+            oss << formatSimple(vec[i]);
+        }
+        oss << " ]";
+        return oss.str();
+    }
+    if (std::holds_alternative<std::unordered_map<std::string, Interpreter::SimpleValue>>(v)) {
+        const auto &mp = std::get<std::unordered_map<std::string, Interpreter::SimpleValue>>(v);
+        std::ostringstream oss;
+        oss << "{ ";
+        bool first = true;
+        for (const auto &p : mp) {
+            if (!first) oss << ", ";
+            first = false;
+            oss << "\"" << escapeString(p.first) << "\"" << ": " << formatSimple(p.second);
+        }
+        oss << " }";
+        return oss.str();
+    }
+    return "";
+}
 
 void Interpreter::assignVariable(const std::string& name, int value) {
     variables[name] = value;
@@ -397,17 +448,19 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
 
       // Handle print statements.
 else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
-    // Pre-evaluate to detect runtime errors (e.g., out-of-bounds) and suppress output if any
-    runtimeError = false;
-    (void)evaluateValue(printStmt->expression);
-    bool hadError = runtimeError;
-    runtimeError = false;
-    if (hadError) {
-        std::cout << "" << std::endl;
-    } else {
-        std::string output = evaluatePrintExpr(printStmt->expression);
-        std::cout << output << std::endl;
+    // Only preflight suppress when directly printing an index expression; otherwise print normally
+    if (std::dynamic_pointer_cast<IndexExpression>(printStmt->expression)) {
+        runtimeError = false;
+        (void)evaluateValue(printStmt->expression);
+        bool hadError = runtimeError;
+        runtimeError = false;
+        if (hadError) {
+            std::cout << "" << std::endl;
+            return;
+        }
     }
+    std::string output = evaluatePrintExpr(printStmt->expression);
+    std::cout << output << std::endl;
 }
     else {
         std::cerr << "Error: Unknown AST Node encountered!" << std::endl;
@@ -546,6 +599,10 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
                 if (std::holds_alternative<int>(it->second)) {
                     return std::to_string(std::get<int>(it->second));
                 }
+                if (std::holds_alternative<std::vector<SimpleValue>>(it->second) ||
+                    std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(it->second)) {
+                    return formatValue(it->second);
+                }
             }
             std::cerr << "Error: Undefined variable '" << strExpr->token.value << "'" << std::endl;
             return "";
@@ -566,37 +623,8 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
         if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
         if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
-        // Collections printing (basic)
-        if (std::holds_alternative<std::vector<SimpleValue>>(v)) {
-            const auto &vec = std::get<std::vector<SimpleValue>>(v);
-            std::string out = "[";
-            for (size_t i = 0; i < vec.size(); ++i) {
-                if (i) out += ", ";
-                const auto &sv = vec[i];
-                if (std::holds_alternative<int>(sv)) out += std::to_string(std::get<int>(sv));
-                else if (std::holds_alternative<std::string>(sv)) out += std::get<std::string>(sv);
-                else out += (std::get<bool>(sv) ? "True" : "False");
-            }
-            out += "]";
-            return out;
-        }
-        if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) {
-            const auto &mp = std::get<std::unordered_map<std::string, SimpleValue>>(v);
-            std::string out = "{";
-            bool first = true;
-            for (const auto &p : mp) {
-                if (!first) out += ", ";
-                first = false;
-                out += p.first + ": ";
-                const auto &sv = p.second;
-                if (std::holds_alternative<int>(sv)) out += std::to_string(std::get<int>(sv));
-                else if (std::holds_alternative<std::string>(sv)) out += std::get<std::string>(sv);
-                else out += (std::get<bool>(sv) ? "True" : "False");
-            }
-            out += "}";
-            return out;
-        }
-        return "";
+        // Collections and other values via pretty-printer
+        return formatValue(v);
     } else if (auto castExpr = std::dynamic_pointer_cast<CastExpression>(expr)) {
         if (castExpr->target == CastTarget::ToPhrase) {
             Value v = evaluateValue(castExpr->operand);
@@ -666,6 +694,27 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         // Other arithmetic ops: evaluate then print as number
         int v = evaluateExpr(expr);
         return std::to_string(v);
+    }
+    // Direct array/object literals: pretty-print
+    if (std::dynamic_pointer_cast<ArrayLiteral>(expr) || std::dynamic_pointer_cast<ObjectLiteral>(expr)) {
+        Value v = evaluateValue(expr);
+        if (runtimeError) {
+            runtimeError = false;
+            return std::string("");
+        }
+        return formatValue(v);
+    }
+    // Generic fallback: if evaluating yields a collection, pretty-print it
+    {
+        Value v = evaluateValue(expr);
+        if (runtimeError) {
+            runtimeError = false;
+            return std::string("");
+        }
+        if (std::holds_alternative<std::vector<SimpleValue>>(v) ||
+            std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) {
+            return formatValue(v);
+        }
     }
     return "";
 }
