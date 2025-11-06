@@ -63,10 +63,10 @@ std::shared_ptr<ASTNode> Parser::parseOr() {
 }
 
 std::shared_ptr<ASTNode> Parser::parseAnd() {
-    auto left = parseUnary();
+    auto left = parseComparison();
     while (!isAtEnd() && peek().type == TokenType::AND) {
         Token op = advance();
-        auto right = parseUnary();
+        auto right = parseComparison();
         left = std::make_shared<BinaryExpression>(left, op, right);
     }
     return left;
@@ -79,6 +79,59 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
         return std::make_shared<UnaryExpression>(op, operand);
     }
     return parsePrimary();
+}
+
+// Parse comparison expressions: handles SURPASSETH, REMAINETH, EQUAL, NOT_EQUAL, GREATER, LESSER
+std::shared_ptr<ASTNode> Parser::parseComparison() {
+    auto left = parseUnary();
+    while (!isAtEnd()) {
+        TokenType t = peek().type;
+        if (t == TokenType::SURPASSETH || t == TokenType::REMAINETH ||
+            t == TokenType::EQUAL || t == TokenType::NOT_EQUAL ||
+            t == TokenType::GREATER || t == TokenType::LESSER) {
+            Token op = advance();
+            auto right = parseUnary();
+            left = std::make_shared<BinaryExpression>(left, op, right);
+        } else if (t == TokenType::IDENTIFIER && peek().value == "is") {
+            // Attempt to parse literary comparisons from identifier sequence
+            size_t save = current;
+            advance(); // consume 'is'
+            Token op(TokenType::INVALID, "");
+            if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "equal") {
+                advance();
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "to") {
+                    advance();
+                    op = Token(TokenType::EQUAL, "is equal to");
+                }
+            } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "not") {
+                advance();
+                op = Token(TokenType::NOT_EQUAL, "is not");
+            } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "greater") {
+                advance();
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "than") {
+                    advance();
+                    op = Token(TokenType::GREATER, "is greater than");
+                }
+            } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "lesser") {
+                advance();
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "than") {
+                    advance();
+                    op = Token(TokenType::LESSER, "is lesser than");
+                }
+            }
+            if (op.type != TokenType::INVALID) {
+                auto right = parseUnary();
+                left = std::make_shared<BinaryExpression>(left, op, right);
+            } else {
+                // revert and stop if no comparison phrase recognized
+                current = save;
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    return left;
 }
 
 std::shared_ptr<ASTNode> Parser::parsePrimary() {

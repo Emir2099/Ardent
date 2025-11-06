@@ -122,6 +122,38 @@ Let it be proclaimed: greeting + " world"\
             "Hello  world" // current interpreter inserts an extra space when concatenating
         },
         {
+            "equal_check_true",
+            R"(\
+Let it be known throughout the land, a number named age is of 18 winters.\
+Should the fates decree that age is equal to 18 then Let it be proclaimed: "Aye!" Else whisper "Nay!"\
+)",
+            "Aye!"
+        },
+        {
+            "not_equal_check_true",
+            R"(\
+Let it be known throughout the land, a number named count is of 1 winters.\
+Should the fates decree that count is not 0 then Let it be proclaimed: "Not zero!"\
+)",
+            "Not zero!"
+        },
+        {
+            "greater_than_true",
+            R"(\
+Let it be known throughout the land, a number named n is of 10 winters.\
+Should the fates decree that n is greater than 5 then Let it be proclaimed: "GT" Else whisper "LE"\
+)",
+            "GT"
+        },
+        {
+            "lesser_than_true",
+            R"(\
+Let it be known throughout the land, a number named n is of 2 winters.\
+Should the fates decree that n is lesser than 5 then Let it be proclaimed: "LT" Else whisper "GE"\
+)",
+            "LT"
+        },
+        {
             "number_print",
             R"(\
 Let it be known throughout the land, a number named count is of 5 winters.\
@@ -283,6 +315,7 @@ Should the fates decree brave and not strong or False then Let it be proclaimed:
     for (const auto &tc : tests) {
         Lexer lexer(tc.program);
         auto tokens = lexer.tokenize();
+        // no debug printing in normal runs
         Parser parser(tokens);
         auto ast = parser.parse();
         if (!ast) {

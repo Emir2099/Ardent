@@ -24,6 +24,14 @@ int main() {
     Should the fates decree brave or strong then Let it be proclaimed: "or-ok" Else whisper "or-nay"
     Should the fates decree not brave then Let it be proclaimed: "not-yes" Else whisper "not-no"
     Should the fates decree brave and not strong or False then Let it be proclaimed: "prec-pass" Else whisper "prec-fail"
+
+    Let it be known throughout the land, a number named age is of 18 winters.
+    Should the fates decree that age is equal to 18 then Let it be proclaimed: "Aye!" Else whisper "Nay!"
+    Let it be known throughout the land, a number named cnt is of 0 winters.
+    Should the fates decree that cnt is not 0 then Let it be proclaimed: "Not zero!" Else whisper "Zero!"
+    Let it be known throughout the land, a number named x is of 7 winters.
+    Should the fates decree that x is greater than 3 then Let it be proclaimed: "x>3" Else whisper "x<=3"
+    Should the fates decree that x is lesser than 10 then Let it be proclaimed: "x<10" Else whisper "x>=10"
     )";
     
 

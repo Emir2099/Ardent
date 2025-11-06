@@ -9,7 +9,7 @@ enum class TokenType {
     NAMED, IS_OF, SHOULD, FATES, DECREE, SURPASSETH, 
     THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, 
     COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND,DESCEND,AND_WITH_EACH_DAWN,
-    FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT
+    FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -46,6 +46,10 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::AND: return "AND";
         case TokenType::OR: return "OR";
         case TokenType::NOT: return "NOT";
+        case TokenType::EQUAL: return "EQUAL";
+        case TokenType::NOT_EQUAL: return "NOT_EQUAL";
+        case TokenType::GREATER: return "GREATER";
+        case TokenType::LESSER: return "LESSER";
         default: return "UNKNOWN";
     }
 }

@@ -79,6 +79,14 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             return left > right ? 1 : 0;
         } else if (binExpr->op.type == TokenType::REMAINETH) {
             return left < right ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::EQUAL) {
+            return (left == right) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::NOT_EQUAL) {
+            return (left != right) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::GREATER) {
+            return (left > right) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::LESSER) {
+            return (left < right) ? 1 : 0;
         } else if (binExpr->op.type == TokenType::AND) {
             return (left != 0) && (right != 0) ? 1 : 0;
         } else if (binExpr->op.type == TokenType::OR) {

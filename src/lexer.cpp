@@ -211,6 +211,30 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 5) == "is of") {
             tokens.push_back(parseIsOf());
         }
+        else if (input.substr(currentPos, 11) == "is equal to") {
+            tokens.push_back(Token(TokenType::EQUAL, "is equal to"));
+            currentPos += 11;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 6) == "is not") {
+            tokens.push_back(Token(TokenType::NOT_EQUAL, "is not"));
+            currentPos += 6;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 15) == "is greater than") {
+            tokens.push_back(Token(TokenType::GREATER, "is greater than"));
+            currentPos += 15;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 14) == "is lesser than") {
+            tokens.push_back(Token(TokenType::LESSER, "is lesser than"));
+            currentPos += 14;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 23) == "By decree of the elders") {
             tokens.push_back(parseDecreeElders());
         }
