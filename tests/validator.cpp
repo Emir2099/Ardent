@@ -15,6 +15,8 @@ struct TestCase {
     std::string expectedOutput; // normalized to LF, no trailing spaces
     bool expectParseFailure = false; // when true, parser should fail and emit an error
     std::string expectedErrorContains; // substring expected in stderr on failure
+    bool expectRuntimeError = false; // when true, runtime should emit an error to stderr
+    std::string expectedRuntimeErrorContains; // substring expected in runtime stderr
 };
 
 static std::string normalize(const std::string &s) {
@@ -396,6 +398,19 @@ Let it be proclaimed: hero["title"]\
 )",
             "King of Gondor"
         }
+        ,
+        {
+            "order_index_out_of_bounds_runtime_error",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let it be proclaimed: heroes[4]\
+)",
+            "",
+            false,
+            "",
+            true,
+            "Error: The council knows no element at position 4, for the order 'heroes' holds but 3."
+        }
     };
 
     int passed = 0;
@@ -438,17 +453,33 @@ Let it be proclaimed: hero["title"]\
         if (tc.name == "for_loop_ascend" && predictInfiniteFor(ast)) {
             got = "Infinite Loop";
         } else {
-            // Capture interpreter output
-            std::ostringstream buffer;
-            std::streambuf* old = std::cout.rdbuf(buffer.rdbuf());
+            // Capture interpreter stdout and stderr
+            std::ostringstream outBuf;
+            std::ostringstream runErrBuf;
+            std::streambuf* oldOut = std::cout.rdbuf(outBuf.rdbuf());
+            std::streambuf* oldRunErr = std::cerr.rdbuf(runErrBuf.rdbuf());
             {
                 Interpreter interpreter;
                 interpreter.execute(ast);
             }
-            std::cout.rdbuf(old);
-            auto rawOut = buffer.str();
+            std::cout.rdbuf(oldOut);
+            std::cerr.rdbuf(oldRunErr);
+            auto rawOut = outBuf.str();
             auto filtered = filterRuntimeNoise(rawOut);
             got = normalize(filtered);
+
+            if (tc.expectRuntimeError) {
+                auto errs = runErrBuf.str();
+                if (errs.find(tc.expectedRuntimeErrorContains) == std::string::npos) {
+                    std::cout << "[FAIL] " << tc.name << std::endl;
+                    std::cout << "  expected runtime error to contain:\n" << tc.expectedRuntimeErrorContains << std::endl;
+                    std::cout << "  stderr was:\n" << errs << std::endl;
+                    failed++;
+                    continue;
+                }
+                // Ignore stdout for runtime error tests; only the error text matters
+                got = normalize(tc.expectedOutput);
+            }
         }
         auto expect = normalize(tc.expectedOutput);
 
