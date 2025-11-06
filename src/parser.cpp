@@ -54,7 +54,7 @@ std::shared_ptr<ASTNode> Parser::parseExpression() {
 
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
-    if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER) {
+    if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
         token = advance();  // Consume the token once
         return std::make_shared<Expression>(token);
     } else {
@@ -173,6 +173,8 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     // Accept either STRING or NUMBER (with optional leading '-')
     Token value(TokenType::INVALID, "");
     if (peek().type == TokenType::STRING) {
+        value = advance();
+    } else if (peek().type == TokenType::BOOLEAN) {
         value = advance();
     } else if (peek().type == TokenType::OPERATOR && peek().value == "-") {
         // negative number literal

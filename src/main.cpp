@@ -11,6 +11,12 @@ int main() {
     Let it be known throughout the land, a number named count is of -3 winters.
     Let it be known throughout the land, a phrase named greeting is of "Hello, world!".  
     Let it be proclaimed: greeting + " How art thou?"
+   
+    Let it be known throughout the land, a truth named flag is of True.
+    Let it be proclaimed: True
+    Let it be proclaimed: flag
+    Let it be known throughout the land, a truth named off is of False.
+    Let it be proclaimed: off
     )";
     
 

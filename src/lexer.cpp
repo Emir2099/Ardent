@@ -131,6 +131,11 @@ Token Lexer::parseIdentifier() {
         advance();
     }
 
+    // Booleans
+    if (identifier == "True" || identifier == "False") {
+        return Token(TokenType::BOOLEAN, identifier);
+    }
+
     if (identifier == "Should") return Token(TokenType::SHOULD, identifier);
     if (identifier == "fates") return Token(TokenType::FATES, identifier);
     if (identifier == "decree") return Token(TokenType::DECREE, identifier);
@@ -190,6 +195,13 @@ std::vector<Token> Lexer::tokenize() {
             // Treat phrase declarations similar to number declarations at lexing stage
             tokens.push_back(Token(TokenType::NAMED, "a phrase named"));
             currentPos += 14;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 13) == "a truth named") {
+            // Treat boolean declarations similar to number/string declarations at lexing stage
+            tokens.push_back(Token(TokenType::NAMED, "a truth named"));
+            currentPos += 13;
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         }

@@ -222,6 +222,22 @@ count\
 let count descend 1\
 )",
             ""
+        },
+        {
+            "boolean_literal_print",
+            R"(\
+Let it be known throughout the land, a truth named flag is of True.\
+Let it be proclaimed: True\
+)",
+            "True"
+        },
+        {
+            "boolean_variable_print",
+            R"(\
+Let it be known throughout the land, a truth named flag is of False.\
+Let it be proclaimed: flag\
+)",
+            "0"
         }
     };
 

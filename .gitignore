@@ -5,3 +5,6 @@ src/*.o
 src/*.exe
 src/*.html
 tests/*.md
+ardent.exe
+*.o
+validator.exe

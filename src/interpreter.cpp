@@ -51,6 +51,8 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             return getIntVariable(numExpr->token.value);
         } else if (numExpr->token.type == TokenType::NUMBER) {
             return std::stoi(numExpr->token.value);
+        } else if (numExpr->token.type == TokenType::BOOLEAN) {
+            return (numExpr->token.value == "True") ? 1 : 0;
         }
     } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
         int left = evaluateExpr(binExpr->left);
@@ -116,6 +118,10 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                     assignVariable(varName, value);
                 } else if (rightExpr->token.type == TokenType::STRING) {
                     assignVariable(varName, rightExpr->token.value);
+                } else if (rightExpr->token.type == TokenType::BOOLEAN) {
+                    // Store booleans as 1/0 for now
+                    int value = (rightExpr->token.value == "True") ? 1 : 0;
+                    assignVariable(varName, value);
                 } else if (rightExpr->token.type == TokenType::IDENTIFIER) {
                     // Assignment from another variable
                     auto it = variables.find(rightExpr->token.value);
@@ -291,6 +297,8 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
     if (auto strExpr = std::dynamic_pointer_cast<Expression>(expr)) {
         if (strExpr->token.type == TokenType::STRING) {
             return strExpr->token.value;
+        } else if (strExpr->token.type == TokenType::BOOLEAN) {
+            return strExpr->token.value; // print literal True/False
         } else if (strExpr->token.type == TokenType::IDENTIFIER) {
             // Return string value for identifiers if present, otherwise number-as-string
             auto it = variables.find(strExpr->token.value);
