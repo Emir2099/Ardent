@@ -188,15 +188,24 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
         std::cerr << "Unexpected token: " << token.value << std::endl;
         return nullptr;
     }
-    // Postfix indexing: target[expr] ...
-    while (!isAtEnd() && peek().type == TokenType::LBRACKET) {
-        advance(); // consume [
-        auto indexExpr = parseExpression();
-        if (!match(TokenType::RBRACKET)) {
-            std::cerr << "Error: Expected ']' in index expression at position " << current << std::endl;
-            return nullptr;
+    // Postfix indexing: target[expr] ... and dot syntax: target.identifier
+    while (!isAtEnd() && (peek().type == TokenType::LBRACKET || peek().type == TokenType::DOT)) {
+        if (peek().type == TokenType::LBRACKET) {
+            advance(); // consume [
+            auto indexExpr = parseExpression();
+            if (!match(TokenType::RBRACKET)) {
+                std::cerr << "Error: Expected ']' in index expression at position " << current << std::endl;
+                return nullptr;
+            }
+            node = std::make_shared<IndexExpression>(node, indexExpr);
+        } else if (peek().type == TokenType::DOT) {
+            advance(); // consume '.'
+            Token keyTok = consume(TokenType::IDENTIFIER, "Expected identifier after '.' for tome field");
+            if (keyTok.type == TokenType::INVALID) return nullptr;
+            // Build a STRING literal expression for the key
+            auto keyExpr = std::make_shared<Expression>(Token(TokenType::STRING, keyTok.value));
+            node = std::make_shared<IndexExpression>(node, keyExpr);
         }
-        node = std::make_shared<IndexExpression>(node, indexExpr);
     }
     return node;
 }

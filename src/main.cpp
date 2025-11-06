@@ -51,6 +51,7 @@ int main() {
     Let it be proclaimed: heroes[-5]
     Let it be known throughout the land, a tome named hero is of {"name": "Aragorn", "title": "King of Gondor"}.
     Let it be proclaimed: hero["title"]
+    Let it be proclaimed: hero.title
     )";
     
 

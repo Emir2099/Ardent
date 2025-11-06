@@ -373,6 +373,13 @@ std::vector<Token> Lexer::tokenize() {
             // After colon inside object, we are parsing a value
             if (!objectExpectKey.empty()) objectExpectKey.back() = false;
         }
+        else if (currentChar == '.') {
+            // Only treat '.' as field-access when followed by an identifier start; otherwise ignore as punctuation
+            if (isAlpha(peekNextChar())) {
+                tokens.push_back(Token(TokenType::DOT, "."));
+            }
+            advance();
+        }
         // Check for numbers (including negative)
 else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))) {
     tokens.push_back(parseNumber());

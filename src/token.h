@@ -10,7 +10,7 @@ enum class TokenType {
     THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, 
     COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND,DESCEND,AND_WITH_EACH_DAWN,
     FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, CAST, AS,
-    LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON
+    LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -59,6 +59,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::RBRACE: return "RBRACE";
         case TokenType::COMMA: return "COMMA";
         case TokenType::COLON: return "COLON";
+        case TokenType::DOT: return "DOT";
         default: return "UNKNOWN";
     }
 }

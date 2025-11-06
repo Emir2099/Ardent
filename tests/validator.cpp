@@ -418,6 +418,15 @@ Let it be proclaimed: hero["title"]\
         }
         ,
         {
+            "tome_dot_syntax_prints_title",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {name: "Aragorn", title: "King of Gondor"}.\
+Let it be proclaimed: hero.title\
+)",
+            "King of Gondor"
+        }
+        ,
+        {
             "immutable_order_index_assignment_parse_error",
             R"(\
 Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
