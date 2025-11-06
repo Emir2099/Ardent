@@ -106,6 +106,13 @@ public:
         : spellName(std::move(name)), args(std::move(args)) {}
 };
 
+// Return statement inside spells
+class ReturnStatement : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> expression;
+    explicit ReturnStatement(std::shared_ptr<ASTNode> expr) : expression(std::move(expr)) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

@@ -86,6 +86,14 @@ int main() {
     By decree of the elders, a spell named bestow is cast upon a warrior known as target, a gift known as item:
         Let it be proclaimed: "Blessings upon " + target + ", bearer of " + item
     Invoke the spell bestow upon "Faramir", "the Horn of Gondor"
+    
+    Let it be proclaimed: "--- Return Spell Demo ---"
+    By decree of the elders, a spell named bless is cast upon a warrior known as name:
+        Let it be proclaimed: "Blessing " + name
+        And let it return "Blessed " + name
+    Let it be proclaimed: Invoke the spell bless upon "Boromir"
+    Let it be known throughout the land, a phrase named result is of Invoke the spell bless upon "Gimli".
+    Let it be proclaimed: result
     )ARDENT";
     
 

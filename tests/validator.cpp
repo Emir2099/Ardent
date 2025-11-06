@@ -571,6 +571,19 @@ Invoke the spell unknown upon "Nobody"\
             true,
             "Error: Unknown spell 'unknown'"
         }
+        ,
+        {
+            "spell_return_print_and_assign",
+            R"(\
+By decree of the elders, a spell named bless is cast upon a warrior known as name:\
+Let it be proclaimed: "Blessing " + name\
+And let it return "Blessed " + name\
+Let it be proclaimed: Invoke the spell bless upon "Boromir"\
+Let it be known throughout the land, a phrase named result is of Invoke the spell bless upon "Gimli".\
+Let it be proclaimed: result\
+)",
+            "Blessing Boromir\nBlessed Boromir\nBlessing Gimli\nBlessed Gimli"
+        }
     };
 
     int passed = 0;

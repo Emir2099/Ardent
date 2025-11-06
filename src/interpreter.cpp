@@ -145,6 +145,44 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         }
         return out;
     }
+    if (auto invoke = std::dynamic_pointer_cast<SpellInvocation>(expr)) {
+        // Resolve spell
+        auto it = spells.find(invoke->spellName);
+        if (it == spells.end()) {
+            std::cerr << "Error: Unknown spell '" << invoke->spellName << "'" << std::endl;
+            return 0;
+        }
+        const auto &def = it->second;
+        if (def.params.size() != invoke->args.size()) {
+            std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
+            return 0;
+        }
+        // Bind arguments with shadowing
+        std::unordered_map<std::string, Value> previous;
+        for (size_t i = 0; i < def.params.size(); ++i) {
+            Value val = evaluateValue(invoke->args[i]);
+            auto vit = variables.find(def.params[i]);
+            if (vit != variables.end()) previous[def.params[i]] = vit->second;
+            variables[def.params[i]] = val;
+        }
+        Value retVal = std::string("");
+        bool hasReturn = false;
+        for (auto &stmt : def.body->statements) {
+            if (auto ret = std::dynamic_pointer_cast<ReturnStatement>(stmt)) {
+                retVal = evaluateValue(ret->expression);
+                hasReturn = true;
+                break;
+            }
+            execute(stmt);
+        }
+        // Restore
+        for (const auto &p : def.params) {
+            auto pit = previous.find(p);
+            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
+        }
+        if (!hasReturn) return std::string("");
+        return retVal;
+    }
     if (auto obj = std::dynamic_pointer_cast<ObjectLiteral>(expr)) {
         std::unordered_map<std::string, SimpleValue> out;
         for (auto &kv : obj->entries) {
@@ -513,19 +551,34 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         std::unordered_map<std::string, Value> previous;
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
-            // Save existing
             auto vit = variables.find(def.params[i]);
             if (vit != variables.end()) previous[def.params[i]] = vit->second;
             variables[def.params[i]] = val;
         }
-        // Execute body statements
+        // Execute body and capture possible return value
+        Value retVal = 0;
+        bool hasReturn = false;
         for (auto &stmt : def.body->statements) {
+            if (auto ret = std::dynamic_pointer_cast<ReturnStatement>(stmt)) {
+                retVal = evaluateValue(ret->expression);
+                hasReturn = true;
+                break; // stop executing further statements after return
+            }
             execute(stmt);
         }
         // Restore previous values (shadowing semantics)
         for (const auto &p : def.params) {
             auto pit = previous.find(p);
             if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
+        }
+        // If invocation used in a print or assignment context, variable evaluation handles it.
+        // For standalone invocation, if returned a phrase, print it automatically (optional design choice).
+        if (hasReturn && std::holds_alternative<std::string>(retVal)) {
+            std::cout << std::get<std::string>(retVal) << std::endl;
+        } else if (hasReturn && std::holds_alternative<int>(retVal)) {
+            std::cout << std::get<int>(retVal) << std::endl;
+        } else if (hasReturn && std::holds_alternative<bool>(retVal)) {
+            std::cout << (std::get<bool>(retVal) ? "True" : "False") << std::endl;
         }
     }
     
@@ -782,6 +835,46 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         // Other arithmetic ops: evaluate then print as number
         int v = evaluateExpr(expr);
         return std::to_string(v);
+    } else if (auto invoke = std::dynamic_pointer_cast<SpellInvocation>(expr)) {
+        // Evaluate a spell invocation to a value and pretty-print it
+        // Resolve and bind args
+        auto it = spells.find(invoke->spellName);
+        if (it == spells.end()) {
+            std::cerr << "Error: Unknown spell '" << invoke->spellName << "'" << std::endl;
+            return std::string("");
+        }
+        const auto &def = it->second;
+        if (def.params.size() != invoke->args.size()) {
+            std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
+            return std::string("");
+        }
+        std::unordered_map<std::string, Value> previous;
+        for (size_t i = 0; i < def.params.size(); ++i) {
+            Value val = evaluateValue(invoke->args[i]);
+            auto vit = variables.find(def.params[i]);
+            if (vit != variables.end()) previous[def.params[i]] = vit->second;
+            variables[def.params[i]] = val;
+        }
+        Value retVal = std::string("");
+        bool hasReturn = false;
+        for (auto &stmt : def.body->statements) {
+            if (auto ret = std::dynamic_pointer_cast<ReturnStatement>(stmt)) {
+                retVal = evaluateValue(ret->expression);
+                hasReturn = true;
+                break;
+            }
+            execute(stmt);
+        }
+        for (const auto &p : def.params) {
+            auto pit = previous.find(p);
+            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
+        }
+        // Pretty print result if present
+        if (!hasReturn) return std::string("");
+        if (std::holds_alternative<std::string>(retVal)) return std::get<std::string>(retVal);
+        if (std::holds_alternative<bool>(retVal)) return std::get<bool>(retVal) ? std::string("True") : std::string("False");
+        if (std::holds_alternative<int>(retVal)) return std::to_string(std::get<int>(retVal));
+        return formatValue(retVal);
     }
     // Direct array/object literals: pretty-print
     if (std::dynamic_pointer_cast<ArrayLiteral>(expr) || std::dynamic_pointer_cast<ObjectLiteral>(expr)) {

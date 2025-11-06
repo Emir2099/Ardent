@@ -16,10 +16,12 @@ private:
     // Stored spells: name -> (param list, body)
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
     std::unordered_map<std::string, SpellDef> spells;
+    struct ReturnSignal { Value value; };
     bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
     Value evaluateValue(std::shared_ptr<ASTNode> expr);
+    Value executeSpellBody(const SpellDef &def);
 public:
     void execute(std::shared_ptr<ASTNode> ast);
     void evaluateExpression(std::shared_ptr<ASTNode> expr);

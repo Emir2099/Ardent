@@ -181,6 +181,10 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
         node = parseArrayLiteral();
     } else if (token.type == TokenType::LBRACE) {
         node = parseObjectLiteral();
+    } else if (token.type == TokenType::SPELL_CALL) {
+        // Support 'Invoke the spell ...' as an expression
+        advance();
+        node = parseSpellInvocation();
     } else if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
         token = advance();  // Consume the token once
         node = std::make_shared<Expression>(token);
@@ -820,6 +824,19 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
         TokenType t = peek().type;
         if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::LET || t == TokenType::SHOULD) {
             break;
+        }
+        if (t == TokenType::LET_PROCLAIMED) {
+            // Heuristic: stop body if this proclamation is immediately a top-level spell invocation
+            if (current + 1 < tokens.size() && tokens[current + 1].type == TokenType::SPELL_CALL) {
+                break;
+            }
+        }
+        if (t == TokenType::RETURN) {
+            advance(); // consume RETURN
+            auto retExpr = parseExpression();
+            bodyStmts.push_back(std::make_shared<ReturnStatement>(retExpr));
+            // After a return, optionally continue to allow trailing statements, but they won't execute after return.
+            continue;
         }
         bodyStmts.push_back(parseStatement());
     }

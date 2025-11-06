@@ -11,7 +11,8 @@ enum class TokenType {
     COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND,DESCEND,AND_WITH_EACH_DAWN,
     FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, CAST, AS,
     LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT,
-    EXPAND, AMEND, REMOVE, ERASE
+    EXPAND, AMEND, REMOVE, ERASE,
+    RETURN
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -70,6 +71,7 @@ inline std::string tokenTypeToString(TokenType type) {
     case TokenType::SPELL_CALL: return "SPELL_CALL";
     case TokenType::UPON: return "UPON";
     case TokenType::KNOWN_AS: return "KNOWN_AS";
+    case TokenType::RETURN: return "RETURN";
         default: return "UNKNOWN";
     }
 }

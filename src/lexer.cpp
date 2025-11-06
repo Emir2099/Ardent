@@ -314,6 +314,12 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 16) == "Invoke the spell") {
             tokens.push_back(parseSpellCall());
         }
+        else if (input.substr(currentPos, 17) == "And let it return") {
+            tokens.push_back(Token(TokenType::RETURN, "And let it return"));
+            currentPos += 17;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 5) == "known") {
             // match 'known as'
             if (input.substr(currentPos, 8) == "known as") {
