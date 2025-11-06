@@ -145,6 +145,9 @@ Token Lexer::parseIdentifier() {
     if (identifier == "Else") return Token(TokenType::ELSE, identifier);
     if (identifier == "ascend") return Token(TokenType::ASCEND, identifier); 
     if (identifier == "descend") return Token(TokenType::DESCEND, identifier);
+    if (identifier == "and") return Token(TokenType::AND, identifier);
+    if (identifier == "or") return Token(TokenType::OR, identifier);
+    if (identifier == "not") return Token(TokenType::NOT, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);

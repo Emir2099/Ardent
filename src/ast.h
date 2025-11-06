@@ -29,6 +29,15 @@ public:
         : left(left), op(op), right(right) {}
 };
 
+// Represents unary operations (e.g., not expr)
+class UnaryExpression : public ASTNode {
+public:
+    Token op;
+    std::shared_ptr<ASTNode> operand;
+    UnaryExpression(Token op, std::shared_ptr<ASTNode> operand)
+        : op(op), operand(operand) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

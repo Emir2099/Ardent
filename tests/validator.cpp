@@ -238,6 +238,42 @@ Let it be known throughout the land, a truth named flag is of False.\
 Let it be proclaimed: flag\
 )",
             "False"
+        },
+        {
+            "logical_and_false",
+            R"(\
+Let it be known throughout the land, a truth named brave is of True.\
+Let it be known throughout the land, a truth named strong is of False.\
+Should the fates decree brave and strong then Let it be proclaimed: "ok" Else whisper "nay"\
+)",
+            "nay"
+        },
+        {
+            "logical_or_true",
+            R"(\
+Let it be known throughout the land, a truth named brave is of True.\
+Let it be known throughout the land, a truth named strong is of False.\
+Should the fates decree brave or strong then Let it be proclaimed: "ok" Else whisper "nay"\
+)",
+            "ok"
+        },
+        {
+            "logical_not",
+            R"(\
+Let it be known throughout the land, a truth named brave is of True.\
+Should the fates decree not brave then Let it be proclaimed: "yes" Else whisper "no"\
+)",
+            "no"
+        },
+        {
+            "logical_precedence_not_and_or",
+            R"(\
+Let it be known throughout the land, a truth named brave is of True.\
+Let it be known throughout the land, a truth named strong is of False.\
+Let it be known throughout the land, a truth named cunning is of True.\
+Should the fates decree brave and not strong or False then Let it be proclaimed: "pass" Else whisper "fail"\
+)",
+            "pass"
         }
     };
 

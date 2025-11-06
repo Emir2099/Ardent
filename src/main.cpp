@@ -17,6 +17,13 @@ int main() {
     Let it be proclaimed: flag
     Let it be known throughout the land, a truth named off is of False.
     Let it be proclaimed: off
+
+    Let it be known throughout the land, a truth named brave is of True.
+    Let it be known throughout the land, a truth named strong is of False.
+    Should the fates decree brave and strong then Let it be proclaimed: "and-ok" Else whisper "and-nay"
+    Should the fates decree brave or strong then Let it be proclaimed: "or-ok" Else whisper "or-nay"
+    Should the fates decree not brave then Let it be proclaimed: "not-yes" Else whisper "not-no"
+    Should the fates decree brave and not strong or False then Let it be proclaimed: "prec-pass" Else whisper "prec-fail"
     )";
     
 

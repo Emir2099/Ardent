@@ -65,6 +65,12 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
         } else if (numExpr->token.type == TokenType::BOOLEAN) {
             return (numExpr->token.value == "True") ? 1 : 0;
         }
+    } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
+        int val = evaluateExpr(unary->operand);
+        if (unary->op.type == TokenType::NOT) {
+            return val ? 0 : 1;
+        }
+        return val;
     } else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(expr)) {
         int left = evaluateExpr(binExpr->left);
         int right = evaluateExpr(binExpr->right);
@@ -73,6 +79,10 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             return left > right ? 1 : 0;
         } else if (binExpr->op.type == TokenType::REMAINETH) {
             return left < right ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::AND) {
+            return (left != 0) && (right != 0) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::OR) {
+            return (left != 0) || (right != 0) ? 1 : 0;
         }
         // Handle arithmetic operators
         else if (binExpr->op.value == "+") {
@@ -156,22 +166,11 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     // Handle if-statements.
     else if (auto ifStmt = std::dynamic_pointer_cast<IfStatement>(ast)) {
         std::cout << "Executing IF condition..." << std::endl;
-        // expect the condition to be a BinaryExpression.
-        auto condBinExpr = std::dynamic_pointer_cast<BinaryExpression>(ifStmt->condition);
-        if (condBinExpr) {
-            auto leftExpr = std::dynamic_pointer_cast<Expression>(condBinExpr->left);
-            auto rightExpr = std::dynamic_pointer_cast<Expression>(condBinExpr->right);
-            if (leftExpr && rightExpr) {
-                int varValue = getIntVariable(leftExpr->token.value);
-                int condValue = std::stoi(rightExpr->token.value);
-                if (condBinExpr->op.value == "surpasseth" && varValue > condValue) {
-                    execute(ifStmt->thenBranch);
-                } else if (ifStmt->elseBranch) {
-                    execute(ifStmt->elseBranch);
-                }
-            }
-        } else {
-            std::cerr << "Error: IF condition is not a valid binary expression." << std::endl;
+        int cond = evaluateExpr(ifStmt->condition);
+        if (cond != 0) {
+            execute(ifStmt->thenBranch);
+        } else if (ifStmt->elseBranch) {
+            execute(ifStmt->elseBranch);
         }
     }
      // Handle while loop execution

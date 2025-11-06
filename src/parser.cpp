@@ -45,11 +45,40 @@ bool Parser::isAtEnd() {
     return current >= tokens.size();
 }
 
-// A simple parseExpression that consumes a single token.
-
+// Logical expression parsing with precedence: NOT > AND > OR
 std::shared_ptr<ASTNode> Parser::parseExpression() {
-    auto left = parsePrimary(); // Parse left side (string/number/identifier)
-    return parseOperatorExpression(0, std::move(left)); // Handle operators
+    auto left = parseOr();
+    // After logicals, allow arithmetic/operator concatenation as before
+    return parseOperatorExpression(0, std::move(left));
+}
+
+std::shared_ptr<ASTNode> Parser::parseOr() {
+    auto left = parseAnd();
+    while (!isAtEnd() && peek().type == TokenType::OR) {
+        Token op = advance();
+        auto right = parseAnd();
+        left = std::make_shared<BinaryExpression>(left, op, right);
+    }
+    return left;
+}
+
+std::shared_ptr<ASTNode> Parser::parseAnd() {
+    auto left = parseUnary();
+    while (!isAtEnd() && peek().type == TokenType::AND) {
+        Token op = advance();
+        auto right = parseUnary();
+        left = std::make_shared<BinaryExpression>(left, op, right);
+    }
+    return left;
+}
+
+std::shared_ptr<ASTNode> Parser::parseUnary() {
+    if (!isAtEnd() && peek().type == TokenType::NOT) {
+        Token op = advance();
+        auto operand = parseUnary();
+        return std::make_shared<UnaryExpression>(op, operand);
+    }
+    return parsePrimary();
 }
 
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
@@ -120,11 +149,23 @@ std::shared_ptr<ASTNode> Parser::parseSimpleCondition() {
 // Parse an if-statement.
 // Assumes that the SHOULD token has already been matched.
 std::shared_ptr<ASTNode> Parser::parseIfStatement() {
-    // Use the simple condition parser to parse a binary condition.
-    auto condition = parseSimpleCondition();
+    // Skip filler words first
+    while (!isAtEnd() && 
+           (peek().type == TokenType::FATES ||
+            peek().type == TokenType::DECREE ||
+            (peek().type == TokenType::IDENTIFIER && (peek().value == "the" || peek().value == "that")))) {
+        advance();
+    }
+    size_t save = current;
+    auto condition = parseExpression();
     if (!match(TokenType::THEN)) {
-        std::cerr << "Error: Expected THEN after IF condition at position " << current << std::endl;
-        return nullptr;
+        // fallback to numeric simple condition
+        current = save;
+        condition = parseSimpleCondition();
+        if (!match(TokenType::THEN)) {
+            std::cerr << "Error: Expected THEN after IF condition at position " << current << std::endl;
+            return nullptr;
+        }
     }
     // For the then-branch: if the next token is LET_PROCLAIMED, treat it as a print statement.
     std::shared_ptr<ASTNode> thenBranch;
