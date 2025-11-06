@@ -73,6 +73,19 @@ public:
         : target(std::move(target)), index(std::move(index)) {}
 };
 
+// Collection mutation rites
+enum class CollectionRiteType { OrderExpand, OrderRemove, TomeAmend, TomeErase };
+class CollectionRite : public ASTNode {
+public:
+    CollectionRiteType riteType;
+    std::string varName; // target variable
+    // Optional key or element expression
+    std::shared_ptr<ASTNode> keyExpr; // for tome amend/erase (erase uses keyExpr only), or order remove element expression
+    std::shared_ptr<ASTNode> valueExpr; // for order expand (element) or tome amend (new value)
+    CollectionRite(CollectionRiteType t, std::string v, std::shared_ptr<ASTNode> key, std::shared_ptr<ASTNode> val)
+        : riteType(t), varName(std::move(v)), keyExpr(std::move(key)), valueExpr(std::move(val)) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

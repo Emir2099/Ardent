@@ -89,6 +89,27 @@ Token Lexer::parseLetProclaimed() {
     return Token(TokenType::ERROR, "Invalid LET_PROCLAIMED");
 }
 
+Token Lexer::parseGenericLet() {
+    // Consume leading 'let' (case-insensitive)
+    size_t start = currentPos;
+    auto ciEqual = [](char a, char b){ return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); };
+    auto matchWord = [&](const char* word) -> bool {
+        size_t i = 0;
+        while (word[i] && currentPos + i < input.size() && ciEqual(input[currentPos + i], word[i])) {
+            ++i;
+        }
+        if (word[i] == '\0') {
+            currentPos += i;
+            currentChar = (currentPos < input.length()? input[currentPos] : '\0');
+            return true;
+        }
+        return false;
+    };
+    if (!matchWord("let")) { currentPos = start; currentChar = (currentPos < input.length()? input[currentPos] : '\0'); return Token(TokenType::ERROR, "Invalid LET rite syntax"); }
+    // Do not consume further words; let parser handle 'the order/tome ...'
+    return Token(TokenType::LET, "Let");
+}
+
 Token Lexer::parseDecreeElders() {
     std::string phrase = "By decree of the elders";
     size_t len = phrase.length();
@@ -152,6 +173,10 @@ Token Lexer::parseIdentifier() {
     if (identifier == "not") return Token(TokenType::NOT, identifier);
     if (identifier == "cast") return Token(TokenType::CAST, identifier);
     if (identifier == "as") return Token(TokenType::AS, identifier);
+    if (identifier == "expand") return Token(TokenType::EXPAND, identifier);
+    if (identifier == "amend") return Token(TokenType::AMEND, identifier);
+    if (identifier == "remove") return Token(TokenType::REMOVE, identifier);
+    if (identifier == "erase") return Token(TokenType::ERASE, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);
@@ -204,6 +229,10 @@ std::vector<Token> Lexer::tokenize() {
         // Multi-word phrases
         else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+it\\s+be\\s+known", std::regex_constants::icase))) {
             tokens.push_back(parseLet());
+        }
+        // Collection rite opening: 'Let the order' / 'Let the tome'
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+the\\s+(order|tome)", std::regex_constants::icase))) {
+            tokens.push_back(parseGenericLet());
         }
         else if (input.substr(currentPos, 14) == "a number named") {
             tokens.push_back(parseNamed());

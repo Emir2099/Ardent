@@ -662,6 +662,52 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
 // Parse a single statement.
 std::shared_ptr<ASTNode> Parser::parseStatement() {
     if (match(TokenType::LET)) {
+        // Peek ahead for collection rites: 'the order' / 'the tome' <name> verb ...
+        size_t save = current;
+        // Accept optional 'the'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "the")) {
+            advance();
+        }
+        bool isCollection = false;
+        bool isOrder = false;
+        bool isTome = false;
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "order")) { isCollection = true; isOrder = true; advance(); }
+        else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "tome")) { isCollection = true; isTome = true; advance(); }
+        if (isCollection) {
+            // variable name
+            Token varTok = consume(TokenType::IDENTIFIER, "Expected collection variable name after 'order'/'tome'");
+            if (varTok.type == TokenType::INVALID) return nullptr;
+            // verb
+            Token verb = peek();
+            if (verb.type == TokenType::EXPAND || verb.type == TokenType::AMEND || verb.type == TokenType::REMOVE || verb.type == TokenType::ERASE) {
+                advance();
+                if (verb.type == TokenType::EXPAND && isOrder) {
+                    // expand with <expr>
+                    if (!match(TokenType::IDENTIFIER) || tokens[current-1].value != "with") {
+                        std::cerr << "Error: Expected 'with' after expand" << std::endl; return nullptr; }
+                    auto elemExpr = parseExpression();
+                    return std::make_shared<CollectionRite>(CollectionRiteType::OrderExpand, varTok.value, nullptr, elemExpr);
+                } else if (verb.type == TokenType::AMEND && isTome) {
+                    // amend "key" to <expr>
+                    auto keyNode = parseExpression();
+                    if (!match(TokenType::IDENTIFIER) || tokens[current-1].value != "to") { std::cerr << "Error: Expected 'to' after amend key" << std::endl; return nullptr; }
+                    auto valExpr = parseExpression();
+                    return std::make_shared<CollectionRite>(CollectionRiteType::TomeAmend, varTok.value, keyNode, valExpr);
+                } else if (verb.type == TokenType::REMOVE && isOrder) {
+                    // remove <expr> (element match by equality)
+                    auto elemExpr = parseExpression();
+                    return std::make_shared<CollectionRite>(CollectionRiteType::OrderRemove, varTok.value, elemExpr, nullptr);
+                } else if (verb.type == TokenType::ERASE && isTome) {
+                    // erase "key"
+                    auto keyNode = parseExpression();
+                    return std::make_shared<CollectionRite>(CollectionRiteType::TomeErase, varTok.value, keyNode, nullptr);
+                } else {
+                    std::cerr << "Error: Rite verb incompatible with collection type" << std::endl; return nullptr;
+                }
+            }
+            // Not a rite; revert and parse as declaration
+            current = save;
+        }
         return parseVariableDeclaration();
     } else if (match(TokenType::SHOULD)) {
         return parseIfStatement();

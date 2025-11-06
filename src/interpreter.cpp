@@ -7,6 +7,7 @@
 #include <vector>
 #include <variant>
 #include <sstream>
+#include <algorithm>
 
 // Helpers for pretty-printing values in narrative style
 static std::string escapeString(const std::string &s) {
@@ -442,6 +443,56 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     }
     else if (auto doWhileStmt = std::dynamic_pointer_cast<DoWhileLoop>(ast)) {
         executeDoWhileLoop(doWhileStmt);
+    }
+    else if (auto rite = std::dynamic_pointer_cast<CollectionRite>(ast)) {
+        // Clone-modify-reassign pattern
+        auto it = variables.find(rite->varName);
+        if (it == variables.end()) {
+            std::cerr << "Error: Undefined collection '" << rite->varName << "'" << std::endl;
+            return;
+        }
+        if (rite->riteType == CollectionRiteType::OrderExpand || rite->riteType == CollectionRiteType::OrderRemove) {
+            if (!std::holds_alternative<std::vector<SimpleValue>>(it->second)) {
+                std::cerr << "TypeError: '" << rite->varName << "' is not an order" << std::endl; return; }
+            auto vec = std::get<std::vector<SimpleValue>>(it->second); // clone
+            if (rite->riteType == CollectionRiteType::OrderExpand) {
+                Value v = evaluateValue(rite->valueExpr);
+                if (std::holds_alternative<int>(v)) vec.emplace_back(std::get<int>(v));
+                else if (std::holds_alternative<std::string>(v)) vec.emplace_back(std::get<std::string>(v));
+                else if (std::holds_alternative<bool>(v)) vec.emplace_back(std::get<bool>(v));
+                else { std::cerr << "TypeError: Only simple values may be placed within an order" << std::endl; }
+            } else {
+                // remove by value equality (simple values only)
+                Value v = evaluateValue(rite->keyExpr);
+                bool removed = false;
+                auto equalsSimple = [&](const SimpleValue &sv) -> bool {
+                    if (std::holds_alternative<int>(v) && std::holds_alternative<int>(sv)) return std::get<int>(v)==std::get<int>(sv);
+                    if (std::holds_alternative<std::string>(v) && std::holds_alternative<std::string>(sv)) return std::get<std::string>(v)==std::get<std::string>(sv);
+                    if (std::holds_alternative<bool>(v) && std::holds_alternative<bool>(sv)) return std::get<bool>(v)==std::get<bool>(sv);
+                    return false;
+                };
+                vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const SimpleValue &sv){ if (!removed && equalsSimple(sv)) { removed=true; return true;} return false;}), vec.end());
+            }
+            variables[rite->varName] = vec;
+        } else {
+            // Tome amend/erase
+            if (!std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(it->second)) {
+                std::cerr << "TypeError: '" << rite->varName << "' is not a tome" << std::endl; return; }
+            auto mp = std::get<std::unordered_map<std::string, SimpleValue>>(it->second); // clone
+            Value keyV = evaluateValue(rite->keyExpr);
+            if (!std::holds_alternative<std::string>(keyV)) { std::cerr << "TypeError: Tome keys must be phrases" << std::endl; return; }
+            std::string key = std::get<std::string>(keyV);
+            if (rite->riteType == CollectionRiteType::TomeAmend) {
+                Value val = evaluateValue(rite->valueExpr);
+                if (std::holds_alternative<int>(val)) mp[key] = std::get<int>(val);
+                else if (std::holds_alternative<std::string>(val)) mp[key] = std::get<std::string>(val);
+                else if (std::holds_alternative<bool>(val)) mp[key] = std::get<bool>(val);
+                else { std::cerr << "TypeError: Tome values must be simple" << std::endl; }
+            } else {
+                mp.erase(key);
+            }
+            variables[rite->varName] = mp;
+        }
     }
     
 

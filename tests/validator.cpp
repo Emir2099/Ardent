@@ -444,6 +444,46 @@ Let it be proclaimed: hero\
         }
         ,
         {
+            "order_expand_append",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas"].\
+Let the order heroes expand with "Gimli"\
+Let it be proclaimed: heroes\
+)",
+            "[ \"Aragorn\", \"Legolas\", \"Gimli\" ]"
+        }
+        ,
+        {
+            "tome_amend_title",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {name: "Aragorn", title: "King"}.\
+Let the tome hero amend "title" to "High King"\
+Let it be proclaimed: hero.title\
+)",
+            "High King"
+        }
+        ,
+        {
+            "order_remove_element",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let the order heroes remove "Legolas"\
+Let it be proclaimed: heroes\
+)",
+            "[ \"Aragorn\", \"Gimli\" ]"
+        }
+        ,
+        {
+            "tome_erase_key",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {name: "Aragorn", title: "King of Gondor"}.\
+Let the tome hero erase "title"\
+Let it be proclaimed: hero\
+)",
+            "{ \"name\": \"Aragorn\" }"
+        }
+        ,
+        {
             "immutable_order_index_assignment_parse_error",
             R"(\
 Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\

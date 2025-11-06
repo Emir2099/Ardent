@@ -27,6 +27,7 @@ private:
     Token parseSpellNamed();
     Token parseIsCastUpon();
     Token parseLetProclaimed();
+    Token parseGenericLet();
     // Read a raw identifier lexeme without mapping to keywords/booleans
     std::string readBareIdentifier();
     char peekNextChar() {

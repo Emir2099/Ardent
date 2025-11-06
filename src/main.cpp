@@ -6,8 +6,8 @@
 #include <vector>
 
 int main() {
-    std::string input =  R"(
-    # Previous demo code
+    std::string input =  R"ARDENT(
+    Let it be proclaimed: "--- Core Demo ---"
     Let it be known throughout the land, a number named ct is of 0 winters.  
     Let it be known throughout the land, a number named count is of -3 winters.
     Let it be known throughout the land, a phrase named greeting is of "Hello, world!".  
@@ -52,7 +52,29 @@ int main() {
     Let it be known throughout the land, a tome named hero is of {"name": "Aragorn", "title": "King of Gondor"}.
     Let it be proclaimed: hero["title"]
     Let it be proclaimed: hero.title
-    )";
+
+    Let it be proclaimed: "--- Collection Rites Demo ---"
+    Let it be known throughout the land, an order named moreHeroes is of ["Boromir", "Frodo"].
+    Let it be proclaimed: moreHeroes
+    Let the order moreHeroes expand with "Sam"
+    Let it be proclaimed: moreHeroes
+    Let the order moreHeroes remove "Boromir"
+    Let it be proclaimed: moreHeroes
+
+    Let it be known throughout the land, a tome named realm is of {name: "Gondor", ruler: "Steward"}.
+    Let it be proclaimed: realm
+    Let the tome realm amend "ruler" to "Aragorn"
+    Let it be proclaimed: realm.ruler
+    Let the tome realm erase "name"
+    Let it be proclaimed: realm
+
+    Let it be proclaimed: "(After attempting to remove absent element)"
+    Let the order moreHeroes remove "Boromir"
+    Let it be proclaimed: moreHeroes
+    Let it be proclaimed: "(After attempting to erase missing key)"
+    Let the tome realm erase "lineage"
+    Let it be proclaimed: realm
+    )ARDENT";
     
 
     Lexer lexer(input);
