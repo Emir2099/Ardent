@@ -391,6 +391,15 @@ Let it be proclaimed: heroes[1]\
             "Legolas"
         },
         {
+            "order_indexing_with_expression",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let it be known throughout the land, a number named count is of 1 winters.\
+Let it be proclaimed: heroes[count + 1]\
+)",
+            "Gimli"
+        },
+        {
             "tome_indexing_prints_title",
             R"(\
 Let it be known throughout the land, a tome named hero is of {"name": "Aragorn", "title": "King of Gondor"}.\
@@ -410,6 +419,19 @@ Let it be proclaimed: heroes[4]\
             "",
             true,
             "Error: The council knows no element at position 4, for the order 'heroes' holds but 3."
+        }
+        ,
+        {
+            "order_negative_index_runtime_error",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let it be proclaimed: heroes[-1]\
+)",
+            "",
+            false,
+            "",
+            true,
+            "Error: The council knows no element at position -1, for the order 'heroes' holds but 3."
         }
     };
 

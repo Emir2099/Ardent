@@ -78,6 +78,15 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
         auto operand = parseUnary();
         return std::make_shared<UnaryExpression>(op, operand);
     }
+    // Support unary minus by rewriting to (0 - <operand>)
+    if (!isAtEnd() && peek().type == TokenType::OPERATOR && peek().value == "-") {
+        Token minus = advance();
+        auto operand = parseUnary();
+        // Build left literal 0
+        Token zeroTok(TokenType::NUMBER, "0");
+        auto leftZero = std::make_shared<Expression>(zeroTok);
+        return std::make_shared<BinaryExpression>(leftZero, Token(TokenType::OPERATOR, "-"), operand);
+    }
     if (!isAtEnd() && (peek().type == TokenType::CAST || (peek().type == TokenType::IDENTIFIER && peek().value == "cast"))) {
         return parseCast();
     }
