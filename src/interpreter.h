@@ -13,6 +13,7 @@ private:
     // To allow recursive Value in containers, define helpers
     using SimpleValue = std::variant<int, std::string, bool>;
     std::unordered_map<std::string, Value> variables; // Stores variables and their values
+    bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
     Value evaluateValue(std::shared_ptr<ASTNode> expr);

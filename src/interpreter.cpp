@@ -120,7 +120,16 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             }
             const auto &vec = std::get<std::vector<SimpleValue>>(target);
             if (i < 0 || static_cast<size_t>(i) >= vec.size()) {
-                std::cerr << "IndexError: Order index out of range" << std::endl;
+                // Compose narrative error
+                std::string oname = "the order";
+                if (auto idExpr = std::dynamic_pointer_cast<Expression>(idx->target)) {
+                    if (idExpr->token.type == TokenType::IDENTIFIER) {
+                        oname = "'" + idExpr->token.value + "'";
+                    }
+                }
+                std::cerr << "Error: The council knows no element at position " << i
+                          << ", for the order " << oname << " holds but " << vec.size() << "." << std::endl;
+                runtimeError = true;
                 return 0;
             }
             const SimpleValue &sv = vec[static_cast<size_t>(i)];
@@ -376,8 +385,17 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
 
       // Handle print statements.
 else if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(ast)) {
-    std::string output = evaluatePrintExpr(printStmt->expression);
-    std::cout << output << std::endl;
+    // Pre-evaluate to detect runtime errors (e.g., out-of-bounds) and suppress output if any
+    runtimeError = false;
+    (void)evaluateValue(printStmt->expression);
+    bool hadError = runtimeError;
+    runtimeError = false;
+    if (hadError) {
+        std::cout << "" << std::endl;
+    } else {
+        std::string output = evaluatePrintExpr(printStmt->expression);
+        std::cout << output << std::endl;
+    }
 }
     else {
         std::cerr << "Error: Unknown AST Node encountered!" << std::endl;
@@ -493,6 +511,11 @@ void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
     }
 }
 std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
+    if (runtimeError) {
+        // Suppress output for the current print after an error was signaled
+        runtimeError = false;
+        return std::string("");
+    }
     if (auto strExpr = std::dynamic_pointer_cast<Expression>(expr)) {
         if (strExpr->token.type == TokenType::STRING) {
             return strExpr->token.value;
@@ -515,10 +538,19 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             std::cerr << "Error: Undefined variable '" << strExpr->token.value << "'" << std::endl;
             return "";
         } else {
-            return std::to_string(evaluateExpr(expr));
+            int n = evaluateExpr(expr);
+            if (runtimeError) {
+                runtimeError = false;
+                return std::string("");
+            }
+            return std::to_string(n);
         }
     } else if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
         Value v = evaluateValue(expr);
+        if (runtimeError) {
+            runtimeError = false;
+            return std::string("");
+        }
         if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
         if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
         if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));

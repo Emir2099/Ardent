@@ -46,6 +46,7 @@ int main() {
 
     Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].
     Let it be proclaimed: heroes[1]
+    Let it be proclaimed: heroes[4]
     Let it be known throughout the land, a tome named hero is of {"name": "Aragorn", "title": "King of Gondor"}.
     Let it be proclaimed: hero["title"]
     )";
