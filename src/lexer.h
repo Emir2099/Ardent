@@ -11,6 +11,8 @@ private:
     std::string input;
     size_t currentPos;
     char currentChar;
+    // Track object literal context to auto-stringify tome keys
+    std::vector<bool> objectExpectKey; // stack: for each '{', whether we expect a key (before ':')
 
     void advance();
     bool isAlpha(char c);
@@ -25,6 +27,8 @@ private:
     Token parseSpellNamed();
     Token parseIsCastUpon();
     Token parseLetProclaimed();
+    // Read a raw identifier lexeme without mapping to keywords/booleans
+    std::string readBareIdentifier();
     char peekNextChar() {
     if (currentPos + 1 < input.length()) {
         return input[currentPos + 1];

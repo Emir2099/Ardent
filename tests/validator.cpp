@@ -409,6 +409,15 @@ Let it be proclaimed: hero["title"]\
         }
         ,
         {
+            "tome_unquoted_keys_prints_title",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {name: "Aragorn", title: "King of Gondor"}.\
+Let it be proclaimed: hero["title"]\
+)",
+            "King of Gondor"
+        }
+        ,
+        {
             "order_index_out_of_bounds_runtime_error",
             R"(\
 Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\

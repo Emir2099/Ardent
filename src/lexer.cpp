@@ -7,7 +7,9 @@
 #include <regex>
 
 Lexer::Lexer(const std::string& input) : input(input), currentPos(0), 
-    currentChar(input.empty() ? '\0' : input[0]) {}
+    currentChar(input.empty() ? '\0' : input[0]) {
+    objectExpectKey.clear();
+}
 
 void Lexer::advance() {
     currentPos++;
@@ -153,6 +155,16 @@ Token Lexer::parseIdentifier() {
 
     
     return Token(TokenType::IDENTIFIER, identifier);
+}
+
+// Read a bare identifier lexeme without keyword mapping (used for tome keys)
+std::string Lexer::readBareIdentifier() {
+    std::string identifier;
+    while (isAlpha(currentChar) || isDigit(currentChar) || currentChar == '_') {
+        identifier += currentChar;
+        advance();
+    }
+    return identifier;
 }
 
 
@@ -340,18 +352,26 @@ std::vector<Token> Lexer::tokenize() {
         else if (currentChar == '{') {
             tokens.push_back(Token(TokenType::LBRACE, "{"));
             advance();
+            // Enter object literal: expect a key next
+            objectExpectKey.push_back(true);
         }
         else if (currentChar == '}') {
             tokens.push_back(Token(TokenType::RBRACE, "}"));
             advance();
+            // Exit object literal scope if present
+            if (!objectExpectKey.empty()) objectExpectKey.pop_back();
         }
         else if (currentChar == ',') {
             tokens.push_back(Token(TokenType::COMMA, ","));
             advance();
+            // After comma inside object, expect another key
+            if (!objectExpectKey.empty()) objectExpectKey.back() = true;
         }
         else if (currentChar == ':') {
             tokens.push_back(Token(TokenType::COLON, ":"));
             advance();
+            // After colon inside object, we are parsing a value
+            if (!objectExpectKey.empty()) objectExpectKey.back() = false;
         }
         // Check for numbers (including negative)
 else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))) {
@@ -365,7 +385,13 @@ else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))
             advance();
         }
         else if (isAlpha(currentChar)) {
-            tokens.push_back(parseIdentifier());
+            // If inside an object and expecting a key, convert bare identifier to STRING
+            if (!objectExpectKey.empty() && objectExpectKey.back()) {
+                auto key = readBareIdentifier();
+                tokens.push_back(Token(TokenType::STRING, key));
+            } else {
+                tokens.push_back(parseIdentifier());
+            }
         }
         else if (isDigit(currentChar)) {
             tokens.push_back(parseNumber());
