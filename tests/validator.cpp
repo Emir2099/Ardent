@@ -13,6 +13,8 @@ struct TestCase {
     std::string name;
     std::string program;
     std::string expectedOutput; // normalized to LF, no trailing spaces
+    bool expectParseFailure = false; // when true, parser should fail and emit an error
+    std::string expectedErrorContains; // substring expected in stderr on failure
 };
 
 static std::string normalize(const std::string &s) {
@@ -120,6 +122,24 @@ Let it be known throughout the land, a phrase named greeting is of "Hello".\
 Let it be proclaimed: greeting + " world"\
 )",
             "Hello  world" // current interpreter inserts an extra space when concatenating
+        },
+        {
+            "type_mismatch_number_with_string",
+            R"(\
+Let it be known throughout the land, a number named ct2 is of "hellp" winters.\
+)",
+            "",
+            true,
+            "TypeError: Expected number but got STRING for variable 'ct2'"
+        },
+        {
+            "type_mismatch_truth_with_number",
+            R"(\
+Let it be known throughout the land, a truth named brave is of 32.\
+)",
+            "",
+            true,
+            "TypeError: Expected truth but got NUMBER for variable 'brave'"
         },
         {
             "equal_check_true",
@@ -317,7 +337,28 @@ Should the fates decree brave and not strong or False then Let it be proclaimed:
         auto tokens = lexer.tokenize();
         // no debug printing in normal runs
         Parser parser(tokens);
+        // Capture stderr during parse for negative tests
+        std::ostringstream errBuf;
+        std::streambuf* oldErr = std::cerr.rdbuf(errBuf.rdbuf());
         auto ast = parser.parse();
+        std::cerr.rdbuf(oldErr);
+        if (tc.expectParseFailure) {
+            std::string errs = errBuf.str();
+            bool ok = (ast == nullptr) && (errs.find(tc.expectedErrorContains) != std::string::npos);
+            if (ok) {
+                std::cout << "[PASS] " << tc.name << std::endl;
+                passed++;
+            } else {
+                std::cout << "[FAIL] " << tc.name << std::endl;
+                if (ast != nullptr) std::cout << "  expected: parse failure but got AST" << std::endl;
+                if (errs.find(tc.expectedErrorContains) == std::string::npos) {
+                    std::cout << "  expected error to contain: \n" << tc.expectedErrorContains << std::endl;
+                    std::cout << "  stderr was: \n" << errs << std::endl;
+                }
+                failed++;
+            }
+            continue;
+        }
         if (!ast) {
             std::cout << "[FAIL] " << tc.name << ": parser returned null AST" << std::endl;
             failed++;

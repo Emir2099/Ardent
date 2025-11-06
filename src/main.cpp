@@ -32,6 +32,9 @@ int main() {
     Let it be known throughout the land, a number named x is of 7 winters.
     Should the fates decree that x is greater than 3 then Let it be proclaimed: "x>3" Else whisper "x<=3"
     Should the fates decree that x is lesser than 10 then Let it be proclaimed: "x<10" Else whisper "x>=10"
+
+    Let it be known throughout the land, a number named ct2 is of "hellp" winters.  
+    Let it be known throughout the land, a truth named brave is of 32.
     )";
     
 

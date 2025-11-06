@@ -253,9 +253,14 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     while (!isAtEnd() && !(peek().type == TokenType::NAMED || (peek().type == TokenType::IDENTIFIER && peek().value == "named"))) {
         advance();
     }
-    // Consume NAMED (either as token or identifier value)
+    // Track declared type from the NAMED token when available
+    enum class DeclTy { Unknown, Number, Phrase, Truth };
+    DeclTy declared = DeclTy::Unknown;
     if (peek().type == TokenType::NAMED) {
-        advance();
+        Token namedTok = advance();
+        if (namedTok.value == "a number named") declared = DeclTy::Number;
+        else if (namedTok.value == "a phrase named") declared = DeclTy::Phrase;
+        else if (namedTok.value == "a truth named") declared = DeclTy::Truth;
     } else if (peek().type == TokenType::IDENTIFIER && peek().value == "named") {
         advance();
     } else {
@@ -284,6 +289,24 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
                 advance();
             }
         }
+    }
+
+    // Enforce declared type, when known
+    auto mismatch = [&](const char* expected) {
+        std::cerr << "TypeError: Expected " << expected << " but got "
+                  << tokenTypeToString(value.type) << " for variable '" << varName.value << "'" << std::endl;
+    };
+    if (declared == DeclTy::Number && value.type != TokenType::NUMBER) {
+        mismatch("number");
+        return nullptr;
+    }
+    if (declared == DeclTy::Phrase && value.type != TokenType::STRING) {
+        mismatch("phrase");
+        return nullptr;
+    }
+    if (declared == DeclTy::Truth && value.type != TokenType::BOOLEAN) {
+        mismatch("truth");
+        return nullptr;
     }
     return std::make_shared<BinaryExpression>(
         std::make_shared<Expression>(varName),
