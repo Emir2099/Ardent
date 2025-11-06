@@ -422,16 +422,25 @@ Let it be proclaimed: heroes[4]\
         }
         ,
         {
-            "order_negative_index_runtime_error",
+            "order_negative_index_last_element",
             R"(\
 Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
 Let it be proclaimed: heroes[-1]\
+)",
+            "Gimli"
+        }
+        ,
+        {
+            "order_negative_index_too_far_runtime_error",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let it be proclaimed: heroes[-4]\
 )",
             "",
             false,
             "",
             true,
-            "Error: The council knows no element at position -1, for the order 'heroes' holds but 3."
+            "Error: None stand that far behind in the order, for only 3 dwell within."
         }
     };
 

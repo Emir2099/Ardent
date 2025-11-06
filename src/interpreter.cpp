@@ -119,8 +119,20 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
                 return 0;
             }
             const auto &vec = std::get<std::vector<SimpleValue>>(target);
-            if (i < 0 || static_cast<size_t>(i) >= vec.size()) {
-                // Compose narrative error
+            size_t n = vec.size();
+            // Support Python-style negative indices
+            if (i < 0) {
+                int abs = -i;
+                if (static_cast<size_t>(abs) > n) {
+                    // Too far negative: special narrative error
+                    std::cerr << "Error: None stand that far behind in the order, for only " << n << " dwell within." << std::endl;
+                    runtimeError = true;
+                    return 0;
+                }
+                i = static_cast<int>(n) + i; // e.g., -1 -> n-1
+            }
+            if (i < 0 || static_cast<size_t>(i) >= n) {
+                // Compose narrative error for positive OOB or zero-size corner
                 std::string oname = "the order";
                 if (auto idExpr = std::dynamic_pointer_cast<Expression>(idx->target)) {
                     if (idExpr->token.type == TokenType::IDENTIFIER) {
@@ -128,7 +140,7 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
                     }
                 }
                 std::cerr << "Error: The council knows no element at position " << i
-                          << ", for the order " << oname << " holds but " << vec.size() << "." << std::endl;
+                          << ", for the order " << oname << " holds but " << n << "." << std::endl;
                 runtimeError = true;
                 return 0;
             }
