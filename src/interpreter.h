@@ -7,8 +7,8 @@
 
 class Interpreter {
 private:
-    // Allow integers and strings as variable values
-    using Value = std::variant<int, std::string>;
+    // Allow integers, strings, and booleans as variable values
+    using Value = std::variant<int, std::string, bool>;
     std::unordered_map<std::string, Value> variables; // Stores variables and their values
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
@@ -17,6 +17,7 @@ public:
     void evaluateExpression(std::shared_ptr<ASTNode> expr);
     void assignVariable(const std::string& name, int value);
     void assignVariable(const std::string& name, const std::string& value);
+    void assignVariable(const std::string& name, bool value);
     int getIntVariable(const std::string& name);
     std::string getStringVariable(const std::string& name);
     void executeWhileLoop(std::shared_ptr<WhileLoop> loop);

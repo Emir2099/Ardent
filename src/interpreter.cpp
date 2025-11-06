@@ -16,11 +16,19 @@ void Interpreter::assignVariable(const std::string& name, const std::string& val
     std::cout << "Variable assigned: " << name << " = " << value << std::endl;
 }
 
+void Interpreter::assignVariable(const std::string& name, bool value) {
+    variables[name] = value;
+    std::cout << "Variable assigned: " << name << " = " << (value ? "True" : "False") << std::endl;
+}
+
 int Interpreter::getIntVariable(const std::string& name) {
     auto it = variables.find(name);
     if (it != variables.end()) {
         if (std::holds_alternative<int>(it->second)) {
             return std::get<int>(it->second);
+        }
+        if (std::holds_alternative<bool>(it->second)) {
+            return std::get<bool>(it->second) ? 1 : 0;
         }
         std::cerr << "Error: Variable '" << name << "' is not a number" << std::endl;
     } else {
@@ -38,6 +46,9 @@ std::string Interpreter::getStringVariable(const std::string& name) {
         // If it's an int, convert to string (useful for printing)
         if (std::holds_alternative<int>(it->second)) {
             return std::to_string(std::get<int>(it->second));
+        }
+        if (std::holds_alternative<bool>(it->second)) {
+            return std::get<bool>(it->second) ? std::string("True") : std::string("False");
         }
     } else {
         std::cerr << "Error: Undefined variable '" << name << "'" << std::endl;
@@ -119,17 +130,17 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                 } else if (rightExpr->token.type == TokenType::STRING) {
                     assignVariable(varName, rightExpr->token.value);
                 } else if (rightExpr->token.type == TokenType::BOOLEAN) {
-                    // Store booleans as 1/0 for now
-                    int value = (rightExpr->token.value == "True") ? 1 : 0;
-                    assignVariable(varName, value);
+                    assignVariable(varName, rightExpr->token.value == "True");
                 } else if (rightExpr->token.type == TokenType::IDENTIFIER) {
                     // Assignment from another variable
                     auto it = variables.find(rightExpr->token.value);
                     if (it != variables.end()) {
                         if (std::holds_alternative<int>(it->second)) {
                             assignVariable(varName, std::get<int>(it->second));
-                        } else {
+                        } else if (std::holds_alternative<std::string>(it->second)) {
                             assignVariable(varName, std::get<std::string>(it->second));
+                        } else if (std::holds_alternative<bool>(it->second)) {
+                            assignVariable(varName, std::get<bool>(it->second));
                         }
                     } else {
                         std::cerr << "Error: Undefined variable '" << rightExpr->token.value << "'" << std::endl;
@@ -280,8 +291,10 @@ void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
             if (variables.find(varName) != variables.end()) {
                 if (std::holds_alternative<int>(variables[varName])) {
                     std::cout << "valueeee: " << std::get<int>(variables[varName]) << std::endl;  
-                } else {
+                } else if (std::holds_alternative<std::string>(variables[varName])) {
                     std::cout << "valueeee: " << std::get<std::string>(variables[varName]) << std::endl;  
+                } else if (std::holds_alternative<bool>(variables[varName])) {
+                    std::cout << "valueeee: " << (std::get<bool>(variables[varName]) ? "True" : "False") << std::endl;  
                 }
             } else {
                 std::cerr << "Error: Undefined variable '" << varName << "'" << std::endl;
@@ -300,11 +313,14 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         } else if (strExpr->token.type == TokenType::BOOLEAN) {
             return strExpr->token.value; // print literal True/False
         } else if (strExpr->token.type == TokenType::IDENTIFIER) {
-            // Return string value for identifiers if present, otherwise number-as-string
+            // Return string value for identifiers if present, otherwise number/bool-as-string
             auto it = variables.find(strExpr->token.value);
             if (it != variables.end()) {
                 if (std::holds_alternative<std::string>(it->second)) {
                     return std::get<std::string>(it->second);
+                }
+                if (std::holds_alternative<bool>(it->second)) {
+                    return std::get<bool>(it->second) ? std::string("True") : std::string("False");
                 }
                 if (std::holds_alternative<int>(it->second)) {
                     return std::to_string(std::get<int>(it->second));

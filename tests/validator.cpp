@@ -237,7 +237,7 @@ Let it be proclaimed: True\
 Let it be known throughout the land, a truth named flag is of False.\
 Let it be proclaimed: flag\
 )",
-            "0"
+            "False"
         }
     };
 

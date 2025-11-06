@@ -8,3 +8,7 @@ tests/*.md
 ardent.exe
 *.o
 validator.exe
+*.obj
+*.pdb
+*.ilk
+*.log
