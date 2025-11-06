@@ -31,6 +31,8 @@ private:
     std::shared_ptr<ASTNode> parseWhileLoop();
     std::shared_ptr<ASTNode> parseOperatorExpression(int precedence, std::shared_ptr<ASTNode> left);
     std::shared_ptr<ASTNode> parsePrimary();
+    std::shared_ptr<ASTNode> parseArrayLiteral();
+    std::shared_ptr<ASTNode> parseObjectLiteral();
     std::shared_ptr<ASTNode> parseForLoop();
     std::shared_ptr<ASTNode> parseDoWhileLoop();
     

@@ -379,6 +379,22 @@ Let it be proclaimed: nonzero\
 Let it be proclaimed: cast True as number\
 )",
             "1"
+        },
+        {
+            "order_indexing_prints_second",
+            R"(\
+Let it be known throughout the land, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].\
+Let it be proclaimed: heroes[1]\
+)",
+            "Legolas"
+        },
+        {
+            "tome_indexing_prints_title",
+            R"(\
+Let it be known throughout the land, a tome named hero is of {"name": "Aragorn", "title": "King of Gondor"}.\
+Let it be proclaimed: hero["title"]\
+)",
+            "King of Gondor"
         }
     };
 

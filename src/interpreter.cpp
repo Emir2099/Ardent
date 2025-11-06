@@ -57,7 +57,7 @@ std::string Interpreter::getStringVariable(const std::string& name) {
     return "";
 }
 
-// Evaluate an expression into a typed Value (int, string, bool)
+// Evaluate an expression into a typed Value (int, string, bool, order, tome)
 Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
     // Literal or identifier
     if (auto e = std::dynamic_pointer_cast<Expression>(expr)) {
@@ -77,6 +77,80 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             default:
                 break;
         }
+    }
+    if (auto arr = std::dynamic_pointer_cast<ArrayLiteral>(expr)) {
+        std::vector<SimpleValue> out;
+        out.reserve(arr->elements.size());
+        for (auto &el : arr->elements) {
+            Value v = evaluateValue(el);
+            if (std::holds_alternative<int>(v)) out.emplace_back(std::get<int>(v));
+            else if (std::holds_alternative<std::string>(v)) out.emplace_back(std::get<std::string>(v));
+            else if (std::holds_alternative<bool>(v)) out.emplace_back(std::get<bool>(v));
+            else {
+                std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside an order" << std::endl;
+                out.emplace_back(0);
+            }
+        }
+        return out;
+    }
+    if (auto obj = std::dynamic_pointer_cast<ObjectLiteral>(expr)) {
+        std::unordered_map<std::string, SimpleValue> out;
+        for (auto &kv : obj->entries) {
+            Value v = evaluateValue(kv.second);
+            if (std::holds_alternative<int>(v)) out.emplace(kv.first, std::get<int>(v));
+            else if (std::holds_alternative<std::string>(v)) out.emplace(kv.first, std::get<std::string>(v));
+            else if (std::holds_alternative<bool>(v)) out.emplace(kv.first, std::get<bool>(v));
+            else {
+                std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside a tome" << std::endl;
+                out.emplace(kv.first, 0);
+            }
+        }
+        return out;
+    }
+    if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
+        Value target = evaluateValue(idx->target);
+        Value key = evaluateValue(idx->index);
+        // Index into order
+        if (std::holds_alternative<std::vector<SimpleValue>>(target)) {
+            int i = 0;
+            if (std::holds_alternative<int>(key)) i = std::get<int>(key);
+            else {
+                std::cerr << "TypeError: Order index must be a number" << std::endl;
+                return 0;
+            }
+            const auto &vec = std::get<std::vector<SimpleValue>>(target);
+            if (i < 0 || static_cast<size_t>(i) >= vec.size()) {
+                std::cerr << "IndexError: Order index out of range" << std::endl;
+                return 0;
+            }
+            const SimpleValue &sv = vec[static_cast<size_t>(i)];
+            if (std::holds_alternative<int>(sv)) return std::get<int>(sv);
+            if (std::holds_alternative<std::string>(sv)) return std::get<std::string>(sv);
+            if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv);
+            return 0;
+        }
+        // Index into tome
+        if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(target)) {
+            std::string k;
+            if (std::holds_alternative<std::string>(key)) k = std::get<std::string>(key);
+            else {
+                std::cerr << "TypeError: Tome key must be a phrase" << std::endl;
+                return 0;
+            }
+            const auto &mp = std::get<std::unordered_map<std::string, SimpleValue>>(target);
+            auto it = mp.find(k);
+            if (it == mp.end()) {
+                std::cerr << "KeyError: Tome has no entry for '" << k << "'" << std::endl;
+                return 0;
+            }
+            const SimpleValue &sv = it->second;
+            if (std::holds_alternative<int>(sv)) return std::get<int>(sv);
+            if (std::holds_alternative<std::string>(sv)) return std::get<std::string>(sv);
+            if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv);
+            return 0;
+        }
+        std::cerr << "TypeError: Target is not an order or tome" << std::endl;
+        return 0;
     }
     // Cast
     if (auto c = std::dynamic_pointer_cast<CastExpression>(expr)) {
@@ -174,6 +248,14 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
                 // In numeric context, phrase has no numeric value; return 0
                 return 0;
         }
+    } else if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
+        Value v = evaluateValue(expr);
+        if (std::holds_alternative<int>(v)) return std::get<int>(v);
+        if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+        if (std::holds_alternative<std::string>(v)) {
+            try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; }
+        }
+        return 0;
     } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
         int val = evaluateExpr(unary->operand);
         if (unary->op.type == TokenType::NOT) {
@@ -251,9 +333,16 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             if (leftExpr) {
                 std::string varName = leftExpr->token.value;
                 Value rhs = evaluateValue(binExpr->right);
-                if (std::holds_alternative<int>(rhs)) assignVariable(varName, std::get<int>(rhs));
-                else if (std::holds_alternative<std::string>(rhs)) assignVariable(varName, std::get<std::string>(rhs));
-                else if (std::holds_alternative<bool>(rhs)) assignVariable(varName, std::get<bool>(rhs));
+                // Store any value type, including order and tome
+                variables[varName] = rhs;
+                // Debug print
+                std::cout << "Variable assigned: " << varName << " = ";
+                if (std::holds_alternative<int>(rhs)) std::cout << std::get<int>(rhs);
+                else if (std::holds_alternative<std::string>(rhs)) std::cout << std::get<std::string>(rhs);
+                else if (std::holds_alternative<bool>(rhs)) std::cout << (std::get<bool>(rhs) ? "True" : "False");
+                else if (std::holds_alternative<std::vector<SimpleValue>>(rhs)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(rhs).size() << "]";
+                else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(rhs)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(rhs).size() << "}";
+                std::cout << std::endl;
             }
         } else {
             // Otherwise, simply execute left and right.
@@ -428,6 +517,42 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         } else {
             return std::to_string(evaluateExpr(expr));
         }
+    } else if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
+        Value v = evaluateValue(expr);
+        if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+        if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+        if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+        // Collections printing (basic)
+        if (std::holds_alternative<std::vector<SimpleValue>>(v)) {
+            const auto &vec = std::get<std::vector<SimpleValue>>(v);
+            std::string out = "[";
+            for (size_t i = 0; i < vec.size(); ++i) {
+                if (i) out += ", ";
+                const auto &sv = vec[i];
+                if (std::holds_alternative<int>(sv)) out += std::to_string(std::get<int>(sv));
+                else if (std::holds_alternative<std::string>(sv)) out += std::get<std::string>(sv);
+                else out += (std::get<bool>(sv) ? "True" : "False");
+            }
+            out += "]";
+            return out;
+        }
+        if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) {
+            const auto &mp = std::get<std::unordered_map<std::string, SimpleValue>>(v);
+            std::string out = "{";
+            bool first = true;
+            for (const auto &p : mp) {
+                if (!first) out += ", ";
+                first = false;
+                out += p.first + ": ";
+                const auto &sv = p.second;
+                if (std::holds_alternative<int>(sv)) out += std::to_string(std::get<int>(sv));
+                else if (std::holds_alternative<std::string>(sv)) out += std::get<std::string>(sv);
+                else out += (std::get<bool>(sv) ? "True" : "False");
+            }
+            out += "}";
+            return out;
+        }
+        return "";
     } else if (auto castExpr = std::dynamic_pointer_cast<CastExpression>(expr)) {
         if (castExpr->target == CastTarget::ToPhrase) {
             Value v = evaluateValue(castExpr->operand);

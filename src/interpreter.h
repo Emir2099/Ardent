@@ -3,12 +3,15 @@
 
 #include <unordered_map>
 #include <variant>
+#include <vector>
 #include "ast.h"
 
 class Interpreter {
 private:
     // Allow integers, strings, and booleans as variable values
-    using Value = std::variant<int, std::string, bool>;
+    using Value = std::variant<int, std::string, bool, std::vector<std::variant<int, std::string, bool>>, std::unordered_map<std::string, std::variant<int, std::string, bool>>>;
+    // To allow recursive Value in containers, define helpers
+    using SimpleValue = std::variant<int, std::string, bool>;
     std::unordered_map<std::string, Value> variables; // Stores variables and their values
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);

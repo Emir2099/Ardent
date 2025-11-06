@@ -48,6 +48,31 @@ public:
         : operand(std::move(operand)), target(target) {}
 };
 
+// Array literal: [expr, expr, ...]
+class ArrayLiteral : public ASTNode {
+public:
+    std::vector<std::shared_ptr<ASTNode>> elements;
+    explicit ArrayLiteral(std::vector<std::shared_ptr<ASTNode>> elements)
+        : elements(std::move(elements)) {}
+};
+
+// Object literal (tome): {"key": expr, ...}
+class ObjectLiteral : public ASTNode {
+public:
+    std::vector<std::pair<std::string, std::shared_ptr<ASTNode>>> entries;
+    explicit ObjectLiteral(std::vector<std::pair<std::string, std::shared_ptr<ASTNode>>> entries)
+        : entries(std::move(entries)) {}
+};
+
+// Index expression: target[index]
+class IndexExpression : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> target;
+    std::shared_ptr<ASTNode> index;
+    IndexExpression(std::shared_ptr<ASTNode> target, std::shared_ptr<ASTNode> index)
+        : target(std::move(target)), index(std::move(index)) {}
+};
+
 // Represents an if-else statement
 class IfStatement : public ASTNode {
 public:

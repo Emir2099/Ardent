@@ -167,13 +167,29 @@ std::shared_ptr<ASTNode> Parser::parseCast() {
 
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
-    if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
+    std::shared_ptr<ASTNode> node;
+    if (token.type == TokenType::LBRACKET) {
+        node = parseArrayLiteral();
+    } else if (token.type == TokenType::LBRACE) {
+        node = parseObjectLiteral();
+    } else if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
         token = advance();  // Consume the token once
-        return std::make_shared<Expression>(token);
+        node = std::make_shared<Expression>(token);
     } else {
         std::cerr << "Unexpected token: " << token.value << std::endl;
         return nullptr;
     }
+    // Postfix indexing: target[expr] ...
+    while (!isAtEnd() && peek().type == TokenType::LBRACKET) {
+        advance(); // consume [
+        auto indexExpr = parseExpression();
+        if (!match(TokenType::RBRACKET)) {
+            std::cerr << "Error: Expected ']' in index expression at position " << current << std::endl;
+            return nullptr;
+        }
+        node = std::make_shared<IndexExpression>(node, indexExpr);
+    }
+    return node;
 }
 
 std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std::shared_ptr<ASTNode> left) {
@@ -186,6 +202,58 @@ std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std:
         left = std::make_shared<BinaryExpression>(left, opToken, right);
     }
     return left;
+}
+
+// [expr, expr, ...]
+std::shared_ptr<ASTNode> Parser::parseArrayLiteral() {
+    if (!match(TokenType::LBRACKET)) return nullptr;
+    std::vector<std::shared_ptr<ASTNode>> elements;
+    if (peek().type != TokenType::RBRACKET) {
+        while (true) {
+            auto elem = parseExpression();
+            if (!elem) return nullptr;
+            elements.push_back(elem);
+            if (peek().type == TokenType::COMMA) {
+                advance();
+                continue;
+            }
+            break;
+        }
+    }
+    if (!match(TokenType::RBRACKET)) {
+        std::cerr << "Error: Expected ']' to close array literal at position " << current << std::endl;
+        return nullptr;
+    }
+    return std::make_shared<ArrayLiteral>(elements);
+}
+
+// {"key": expr, ...}
+std::shared_ptr<ASTNode> Parser::parseObjectLiteral() {
+    if (!match(TokenType::LBRACE)) return nullptr;
+    std::vector<std::pair<std::string, std::shared_ptr<ASTNode>>> entries;
+    if (peek().type != TokenType::RBRACE) {
+        while (true) {
+            Token keyTok = consume(TokenType::STRING, "Expected string key in tome literal");
+            if (keyTok.type == TokenType::INVALID) return nullptr;
+            if (!match(TokenType::COLON)) {
+                std::cerr << "Error: Expected ':' after key in tome literal at position " << current << std::endl;
+                return nullptr;
+            }
+            auto val = parseExpression();
+            if (!val) return nullptr;
+            entries.emplace_back(keyTok.value, val);
+            if (peek().type == TokenType::COMMA) {
+                advance();
+                continue;
+            }
+            break;
+        }
+    }
+    if (!match(TokenType::RBRACE)) {
+        std::cerr << "Error: Expected '}' to close tome literal at position " << current << std::endl;
+        return nullptr;
+    }
+    return std::make_shared<ObjectLiteral>(entries);
 }
 
 /* Parse a simple condition in the form:
@@ -285,13 +353,15 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
         advance();
     }
     // Track declared type from the NAMED token when available
-    enum class DeclTy { Unknown, Number, Phrase, Truth };
+    enum class DeclTy { Unknown, Number, Phrase, Truth, Order, Tome };
     DeclTy declared = DeclTy::Unknown;
     if (peek().type == TokenType::NAMED) {
         Token namedTok = advance();
         if (namedTok.value == "a number named") declared = DeclTy::Number;
         else if (namedTok.value == "a phrase named") declared = DeclTy::Phrase;
         else if (namedTok.value == "a truth named") declared = DeclTy::Truth;
+        else if (namedTok.value == "an order named") declared = DeclTy::Order;
+        else if (namedTok.value == "a tome named") declared = DeclTy::Tome;
     } else if (peek().type == TokenType::IDENTIFIER && peek().value == "named") {
         advance();
     } else {
@@ -349,6 +419,10 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
         }
         if (declared == DeclTy::Truth && value.type != TokenType::BOOLEAN) {
             mismatch("truth");
+            return nullptr;
+        }
+        if (declared == DeclTy::Order || declared == DeclTy::Tome) {
+            std::cerr << "TypeError: Complex types must be initialized with proper literals for variable '" << varName.value << "'" << std::endl;
             return nullptr;
         }
     }

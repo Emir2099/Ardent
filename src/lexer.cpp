@@ -210,6 +210,18 @@ std::vector<Token> Lexer::tokenize() {
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         }
+        else if (input.substr(currentPos, 14) == "an order named") {
+            tokens.push_back(Token(TokenType::NAMED, "an order named"));
+            currentPos += 14;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 12) == "a tome named") {
+            tokens.push_back(Token(TokenType::NAMED, "a tome named"));
+            currentPos += 12;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 5) == "is of") {
             tokens.push_back(parseIsOf());
         }
@@ -316,6 +328,30 @@ std::vector<Token> Lexer::tokenize() {
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());
+        }
+        else if (currentChar == '[') {
+            tokens.push_back(Token(TokenType::LBRACKET, "["));
+            advance();
+        }
+        else if (currentChar == ']') {
+            tokens.push_back(Token(TokenType::RBRACKET, "]"));
+            advance();
+        }
+        else if (currentChar == '{') {
+            tokens.push_back(Token(TokenType::LBRACE, "{"));
+            advance();
+        }
+        else if (currentChar == '}') {
+            tokens.push_back(Token(TokenType::RBRACE, "}"));
+            advance();
+        }
+        else if (currentChar == ',') {
+            tokens.push_back(Token(TokenType::COMMA, ","));
+            advance();
+        }
+        else if (currentChar == ':') {
+            tokens.push_back(Token(TokenType::COLON, ":"));
+            advance();
         }
         // Check for numbers (including negative)
 else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))) {
