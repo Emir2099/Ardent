@@ -12,3 +12,5 @@ validator.exe
 *.pdb
 *.ilk
 *.log
+
+dbg_tokens.exe
