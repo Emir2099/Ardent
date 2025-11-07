@@ -127,6 +127,26 @@ int main() {
     let outer ascend 1
     Let it be proclaimed: outer
     )ARDENT";
+
+    // Imported Scrolls demo (non-destructive append)
+    input += R"ARDENT(
+
+    Let it be proclaimed: "--- Imported Scrolls Demo ---"
+    From the scroll of "heroes.ardent" draw all knowledge.
+    Invoke the spell greet upon "Aragorn"
+
+    Let it be proclaimed: "--- Selective Import Demo ---"
+    From the scroll of "spells.ardent" take the spells bless, bestow.
+    Let it be proclaimed: Invoke the spell bless upon "Boromir"
+
+    Let it be proclaimed: "--- Alias Import Demo ---"
+    From the scroll of "alchemy.ardent" draw all knowledge as alch.
+    Invoke the spell alch.transmute upon "lead", "gold"
+
+    Let it be proclaimed: "--- Unfurl Include Demo ---"
+    Unfurl the scroll "legends/warriors.ardent".
+    Let it be proclaimed: who
+    )ARDENT";
     
 
     Lexer lexer(input);

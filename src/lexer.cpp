@@ -314,6 +314,30 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 16) == "Invoke the spell") {
             tokens.push_back(parseSpellCall());
         }
+        else if (input.substr(currentPos, 19) == "From the scroll of") {
+            tokens.push_back(Token(TokenType::FROM_SCROLL, "From the scroll of"));
+            currentPos += 19;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 18) == "draw all knowledge") {
+            tokens.push_back(Token(TokenType::DRAW_ALL_KNOWLEDGE, "draw all knowledge"));
+            currentPos += 18;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 4) == "take") {
+            tokens.push_back(Token(TokenType::TAKE, "take"));
+            currentPos += 4;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 18) == "Unfurl the scroll") {
+            tokens.push_back(Token(TokenType::UNFURL_SCROLL, "Unfurl the scroll"));
+            currentPos += 18;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 17) == "And let it return") {
             tokens.push_back(Token(TokenType::RETURN, "And let it return"));
             currentPos += 17;

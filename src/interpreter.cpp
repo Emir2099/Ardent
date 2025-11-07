@@ -8,6 +8,11 @@
 #include <variant>
 #include <sstream>
 #include <algorithm>
+#include <fstream>
+#include <filesystem>
+// Shared caches/guards for module system across nested interpreters
+static std::unordered_map<std::string, Interpreter::Module> g_moduleCache;
+static std::unordered_map<std::string, bool> g_importing;
 
 // Helpers for pretty-printing values in narrative style
 static std::string escapeString(const std::string &s) {
@@ -560,6 +565,51 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             scopes[static_cast<size_t>(scopeIdx)][rite->varName] = mp;
         }
     }
+    else if (auto impAll = std::dynamic_pointer_cast<ImportAll>(ast)) {
+        Module m = loadModule(impAll->path);
+        if (!impAll->alias.empty()) {
+            for (const auto &p : m.spells) {
+                registerSpell(impAll->alias + "." + p.first, p.second);
+            }
+            // Variables under alias are not namespaced for now.
+        } else {
+            // Merge variables and spells into current global scope
+            for (const auto &v : m.variables) {
+                assignVariableAny(v.first, v.second);
+            }
+            for (const auto &p : m.spells) {
+                registerSpell(p.first, p.second);
+            }
+        }
+    }
+    else if (auto impSel = std::dynamic_pointer_cast<ImportSelective>(ast)) {
+        Module m = loadModule(impSel->path);
+        for (const auto &name : impSel->names) {
+            auto it = m.spells.find(name);
+            if (it == m.spells.end()) {
+                std::cerr << "The scroll yields no such spell '" << name << "' to be taken." << std::endl;
+                continue;
+            }
+            registerSpell(name, it->second);
+        }
+    }
+    else if (auto unfurl = std::dynamic_pointer_cast<UnfurlInclude>(ast)) {
+        // Inline include: read, parse, and execute in current context
+        std::error_code ec;
+        if (!std::filesystem::exists(unfurl->path, ec)) {
+            std::cerr << "The scroll cannot be found at this path: '" << unfurl->path << "'." << std::endl;
+            return;
+        }
+        std::ifstream in(unfurl->path);
+        if (!in) { std::cerr << "The scroll cannot be found at this path: '" << unfurl->path << "'." << std::endl; return; }
+        std::stringstream buffer; buffer << in.rdbuf();
+        Lexer lx(buffer.str());
+        auto toks = lx.tokenize();
+        Parser p(std::move(toks));
+        auto otherAst = p.parse();
+        if (!otherAst) return;
+        execute(otherAst);
+    }
     else if (auto spellDef = std::dynamic_pointer_cast<SpellStatement>(ast)) {
         // Register spell
         spells[spellDef->spellName] = {spellDef->params, spellDef->body};
@@ -902,4 +952,40 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         }
     }
     return "";
+}
+
+Interpreter::Module Interpreter::loadModule(const std::string& path) {
+    // Circular import guard
+    if (g_importing[path]) {
+        std::cerr << "The scroll '" << path << "' folds upon itself — circular invocation forbidden." << std::endl;
+        return Module{};
+    }
+    // Cache hit
+    auto found = g_moduleCache.find(path);
+    if (found != g_moduleCache.end()) return found->second;
+    // File exists?
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl;
+        return Module{};
+    }
+    // Read file
+    std::ifstream in(path);
+    if (!in) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return Module{}; }
+    std::stringstream buffer; buffer << in.rdbuf();
+    // Parse and execute in isolated interpreter
+    Lexer lx(buffer.str());
+    auto toks = lx.tokenize();
+    Parser p(std::move(toks));
+    auto ast = p.parse();
+    if (!ast) return Module{};
+    g_importing[path] = true;
+    Interpreter temp;
+    temp.execute(ast);
+    g_importing.erase(path);
+    Module m;
+    m.variables = temp.getGlobals();
+    m.spells = temp.getSpells();
+    g_moduleCache[path] = m;
+    return m;
 }

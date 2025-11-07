@@ -143,6 +143,31 @@ public:
         : expression(expression) {}
 };
 
+// Import all symbols from a scroll, optional alias for spells
+class ImportAll : public ASTNode {
+public:
+    std::string path;
+    std::string alias; // empty if none
+    ImportAll(std::string path, std::string alias)
+        : path(std::move(path)), alias(std::move(alias)) {}
+};
+
+// Import a selection of spells from a scroll
+class ImportSelective : public ASTNode {
+public:
+    std::string path;
+    std::vector<std::string> names; // spells to take
+    ImportSelective(std::string path, std::vector<std::string> names)
+        : path(std::move(path)), names(std::move(names)) {}
+};
+
+// Inline include (unfurl) another scroll's contents
+class UnfurlInclude : public ASTNode {
+public:
+    std::string path;
+    explicit UnfurlInclude(std::string path) : path(std::move(path)) {}
+};
+
 struct ForLoop : public ASTNode {
     std::shared_ptr<ASTNode> init;
     std::shared_ptr<ASTNode> condition;

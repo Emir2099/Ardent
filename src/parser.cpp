@@ -671,6 +671,10 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseSpellDefinition();
     } else if (match(TokenType::SPELL_CALL)) {
         return parseSpellInvocation();
+    } else if (match(TokenType::FROM_SCROLL)) {
+        return parseImportStatement();
+    } else if (match(TokenType::UNFURL_SCROLL)) {
+        return parseUnfurl();
     } else if (match(TokenType::LET)) {
         // Peek ahead for collection rites: 'the order' / 'the tome' <name> verb ...
         size_t save = current;
@@ -732,6 +736,59 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
+    } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "From") {
+        // Fallback wordy import: From the scroll of "path" (draw all knowledge [as alias] | take [the] [spells] ...)
+        // Consume 'From the scroll of'
+        advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scroll") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "of") advance();
+        Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'From the scroll of'");
+        // Decide branch: draw all knowledge [as alias] OR take ...
+        bool isDrawAll = false;
+        if (!isAtEnd() && peek().type == TokenType::DRAW_ALL_KNOWLEDGE) { advance(); isDrawAll = true; }
+        else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "draw") {
+            // accept identifiers 'draw all knowledge'
+            advance();
+            if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "all") advance();
+            if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "knowledge") { advance(); isDrawAll = true; }
+        }
+        if (isDrawAll) {
+            std::string alias;
+            if (!isAtEnd() && peek().type == TokenType::AS) {
+                advance();
+                Token aliasTok = consume(TokenType::IDENTIFIER, "Expected alias name after 'as'");
+                alias = aliasTok.value;
+            }
+            if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+            return std::make_shared<ImportAll>(pathTok.value, alias);
+        }
+        // Else 'take' branch
+        bool sawTake = false;
+        if (!isAtEnd() && peek().type == TokenType::TAKE) { advance(); sawTake = true; }
+        else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "take") { advance(); sawTake = true; }
+        if (!sawTake) { std::cerr << "Error: Expected 'draw all knowledge' or 'take' after scroll path" << std::endl; return nullptr; }
+        // Optionally consume 'the' 'spells'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "spells" || peek().value == "spell")) advance();
+        std::vector<std::string> names;
+        while (!isAtEnd()) {
+            if (peek().type != TokenType::IDENTIFIER) break;
+            Token t = advance();
+            names.push_back(t.value);
+            if (peek().type == TokenType::COMMA) { advance(); continue; }
+            break;
+        }
+        if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+        return std::make_shared<ImportSelective>(pathTok.value, names);
+    } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Unfurl") {
+        // Fallback wordy unfurl: Unfurl the scroll "path".
+        advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scroll") advance();
+        Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
+        if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+        return std::make_shared<UnfurlInclude>(pathTok.value);
     } else if (peek().type == TokenType::STRING ||
                peek().type == TokenType::NUMBER ||
                peek().type == TokenType::IDENTIFIER) {
@@ -777,7 +834,6 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
 
 // Parse all statements into a BlockStatement.
 std::shared_ptr<ASTNode> Parser::parse() {
-    std::cout << "Starting parsing..." << std::endl;
     std::vector<std::shared_ptr<ASTNode>> statements;
     while (!isAtEnd()) {
         auto stmt = parseStatement();
@@ -852,6 +908,13 @@ std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
     // skip optional whitespace/determiners until IDENTIFIER
     while (!isAtEnd() && peek().type != TokenType::IDENTIFIER) advance();
     Token nameTok = consume(TokenType::IDENTIFIER, "Expected spell name after 'Invoke the spell'");
+    // Support dotted spell names e.g., alch.transmute
+    std::string fullName = nameTok.value;
+    while (!isAtEnd() && peek().type == TokenType::DOT) {
+        advance();
+        Token part = consume(TokenType::IDENTIFIER, "Expected identifier after '.' in qualified spell name");
+        fullName += "." + part.value;
+    }
     consume(TokenType::UPON, "Expected 'upon' after spell name");
     // Single or comma-separated arguments until period or LET or end
     std::vector<std::shared_ptr<ASTNode>> args;
@@ -867,5 +930,57 @@ std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
         // Optional comma token
         if (peek().type == TokenType::COMMA) advance(); else break;
     }
-    return std::make_shared<SpellInvocation>(nameTok.value, args);
+    return std::make_shared<SpellInvocation>(fullName, args);
+}
+
+// From the scroll of "path" draw all knowledge [as alias].
+// From the scroll of "path" take [the] [spells] name[, name]* .
+std::shared_ptr<ASTNode> Parser::parseImportStatement() {
+    // Expect STRING path
+    Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'From the scroll of'");
+    bool drawAll = false;
+    if (match(TokenType::DRAW_ALL_KNOWLEDGE)) { drawAll = true; }
+    else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "draw") {
+        // Accept identifiers 'draw all knowledge'
+        advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "all") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "knowledge") { advance(); drawAll = true; }
+    }
+    if (drawAll) {
+        std::string alias;
+        if (!isAtEnd() && peek().type == TokenType::AS) {
+            advance();
+            Token aliasTok = consume(TokenType::IDENTIFIER, "Expected alias name after 'as'");
+            alias = aliasTok.value;
+        }
+        // Optional trailing period
+        if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+        return std::make_shared<ImportAll>(pathTok.value, alias);
+    }
+    bool sawTake = false;
+    if (match(TokenType::TAKE)) { sawTake = true; }
+    else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "take") { advance(); sawTake = true; }
+    if (sawTake) {
+        // Optionally consume 'the' 'spells'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "spells" || peek().value == "spell")) advance();
+        std::vector<std::string> names;
+        while (!isAtEnd()) {
+            Token t = consume(TokenType::IDENTIFIER, "Expected spell name in take list");
+            names.push_back(t.value);
+            if (peek().type == TokenType::COMMA) { advance(); continue; }
+            break;
+        }
+        if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+        return std::make_shared<ImportSelective>(pathTok.value, names);
+    }
+    std::cerr << "Error: Expected 'draw all knowledge' or 'take' after scroll path" << std::endl;
+    return nullptr;
+}
+
+// Unfurl the scroll "path".
+std::shared_ptr<ASTNode> Parser::parseUnfurl() {
+    Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
+    if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+    return std::make_shared<UnfurlInclude>(pathTok.value);
 }

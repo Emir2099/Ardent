@@ -12,7 +12,8 @@ enum class TokenType {
     FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, CAST, AS,
     LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT,
     EXPAND, AMEND, REMOVE, ERASE,
-    RETURN
+    RETURN,
+    FROM_SCROLL, DRAW_ALL_KNOWLEDGE, TAKE, UNFURL_SCROLL
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -72,6 +73,10 @@ inline std::string tokenTypeToString(TokenType type) {
     case TokenType::UPON: return "UPON";
     case TokenType::KNOWN_AS: return "KNOWN_AS";
     case TokenType::RETURN: return "RETURN";
+        case TokenType::FROM_SCROLL: return "FROM_SCROLL";
+        case TokenType::DRAW_ALL_KNOWLEDGE: return "DRAW_ALL_KNOWLEDGE";
+        case TokenType::TAKE: return "TAKE";
+        case TokenType::UNFURL_SCROLL: return "UNFURL_SCROLL";
         default: return "UNKNOWN";
     }
 }

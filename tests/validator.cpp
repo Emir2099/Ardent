@@ -3,6 +3,8 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <fstream>
+#include <filesystem>
 
 #include "../src/lexer.h"
 #include "../src/parser.h"
@@ -116,6 +118,43 @@ static bool predictInfiniteFor(std::shared_ptr<ASTNode> ast) {
 }
 
 int main() {
+    // Prepare test scroll files for import tests
+    try {
+        std::filesystem::create_directories("legends");
+    } catch (...) {}
+    // heroes.ardent
+    {
+        std::ofstream f("heroes.ardent");
+        f << "By decree of the elders, a spell named greet is cast upon a traveler known as name:\n";
+        f << "Let it be proclaimed: \"Hail, noble \" + name + \"!\"\n";
+    }
+    // spells.ardent
+    {
+        std::ofstream f("spells.ardent");
+        f << "By decree of the elders, a spell named bless is cast upon a warrior known as name:\n";
+        f << "Let it be proclaimed: \"Blessing \" + name\n";
+        f << "And let it return \"Blessed \" + name\n";
+        f << "By decree of the elders, a spell named bestow is cast upon a warrior known as name:\n";
+        f << "Let it be proclaimed: \"Bestowing upon \" + name\n";
+    }
+    // alchemy.ardent
+    {
+        std::ofstream f("alchemy.ardent");
+        f << "By decree of the elders, a spell named transmute is cast upon a traveler known as src, a gift known as dst:\n";
+        f << "Let it be proclaimed: \"Transmuted \" + src + \" to \" + dst\n";
+    }
+    // legends/warriors.ardent
+    {
+        std::ofstream f("legends/warriors.ardent");
+        f << "Let it be known throughout the land, a phrase named who is of \"Aragorn\".\n";
+    }
+    // circular A/B
+    {
+        std::ofstream fa("A.ardent");
+        fa << "From the scroll of \"B.ardent\" draw all knowledge.\n";
+        std::ofstream fb("B.ardent");
+        fb << "From the scroll of \"A.ardent\" draw all knowledge.\n";
+    }
     std::vector<TestCase> tests = {
         {
             "string_concat_print",
@@ -124,6 +163,60 @@ Let it be known throughout the land, a phrase named greeting is of "Hello".\
 Let it be proclaimed: greeting + " world"\
 )",
             "Hello world"
+        },
+        {
+            "import_entire_scroll",
+            R"(\
+From the scroll of "heroes.ardent" draw all knowledge.\
+Invoke the spell greet upon "Aragorn"\
+)",
+            "Hail, noble Aragorn !"
+        },
+        {
+            "import_selective_spells",
+            R"(\
+From the scroll of "spells.ardent" take the spells bless, bestow.\
+Let it be proclaimed: Invoke the spell bless upon "Boromir"\
+)",
+            "Blessing Boromir\nBlessed Boromir"
+        },
+        {
+            "import_with_alias",
+            R"(\
+From the scroll of "alchemy.ardent" draw all knowledge as alch.\
+Invoke the spell alch.transmute upon "lead", "gold"\
+)",
+            "Transmuted lead to gold"
+        },
+        {
+            "unfurl_include_inline",
+            R"(\
+Unfurl the scroll "legends/warriors.ardent".\
+Let it be proclaimed: who\
+)",
+            "Aragorn"
+        },
+        {
+            "import_missing_file_runtime_error",
+            R"(\
+From the scroll of "missing.ardent" draw all knowledge.\
+)",
+            "",
+            false,
+            "",
+            true,
+            "The scroll cannot be found at this path: 'missing.ardent'"
+        },
+        {
+            "circular_import_runtime_error",
+            R"(\
+From the scroll of "A.ardent" draw all knowledge.\
+)",
+            "",
+            false,
+            "",
+            true,
+            "folds upon itself"
         },
         {
             "phrase_plus_truth",

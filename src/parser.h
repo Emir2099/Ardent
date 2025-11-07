@@ -37,6 +37,8 @@ private:
     std::shared_ptr<ASTNode> parseObjectLiteral();
     std::shared_ptr<ASTNode> parseForLoop();
     std::shared_ptr<ASTNode> parseDoWhileLoop();
+    std::shared_ptr<ASTNode> parseImportStatement();
+    std::shared_ptr<ASTNode> parseUnfurl();
     
 public:
     Parser(std::vector<Token> tokens);
