@@ -58,6 +58,10 @@ public:
     void registerSpell(const std::string& name, const SpellDef& def) { spells[name] = def; }
     void registerNative(const std::string& name, NativeFunc fn) { nativeRegistry[name] = std::move(fn); }
 
+    // REPL helpers
+    Value evaluateReplValue(std::shared_ptr<ASTNode> node);
+    std::string stringifyValueForRepl(const Value& v);
+
 };
 
 #endif

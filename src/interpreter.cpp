@@ -1121,3 +1121,47 @@ Interpreter::Module Interpreter::loadModule(const std::string& path) {
     g_moduleCache[path] = m;
     return m;
 }
+
+// ===== REPL helpers =====
+Interpreter::Value Interpreter::evaluateReplValue(std::shared_ptr<ASTNode> node) {
+    if (!node) return 0;
+    if (auto block = std::dynamic_pointer_cast<BlockStatement>(node)) {
+        if (!block->statements.empty()) {
+            auto stmt = block->statements.back();
+            if (auto printStmt = std::dynamic_pointer_cast<PrintStatement>(stmt)) {
+                return evaluateValue(printStmt->expression);
+            }
+            if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(stmt)) {
+                if (bin->op.type == TokenType::IS_OF) {
+                    return evaluateValue(bin->right);
+                }
+            }
+            if (auto nat = std::dynamic_pointer_cast<NativeInvocation>(stmt)) {
+                return evaluateValue(nat);
+            }
+            if (auto spellInv = std::dynamic_pointer_cast<SpellInvocation>(stmt)) {
+                return evaluateValue(spellInv);
+            }
+        }
+        return 0;
+    }
+    if (std::dynamic_pointer_cast<Expression>(node) ||
+        std::dynamic_pointer_cast<IndexExpression>(node) ||
+        std::dynamic_pointer_cast<CastExpression>(node) ||
+        std::dynamic_pointer_cast<BinaryExpression>(node) ||
+        std::dynamic_pointer_cast<UnaryExpression>(node) ||
+        std::dynamic_pointer_cast<NativeInvocation>(node) ||
+        std::dynamic_pointer_cast<SpellInvocation>(node) ||
+        std::dynamic_pointer_cast<ArrayLiteral>(node) ||
+        std::dynamic_pointer_cast<ObjectLiteral>(node)) {
+        return evaluateValue(node);
+    }
+    return 0;
+}
+
+std::string Interpreter::stringifyValueForRepl(const Interpreter::Value& v) {
+    if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+    if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+    if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+    return formatValue(v);
+}

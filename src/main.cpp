@@ -4,8 +4,137 @@
 #include "interpreter.h"
 #include <memory>
 #include <vector>
+#include <fstream>
+#include <string>
+#ifdef _WIN32
+#include <windows.h>
+#include <io.h>
+#include <fcntl.h>
+#endif
 
-int main() {
+static void runArdentProgram(const std::string& code) {
+    Lexer lexer(code);
+    auto tokens = lexer.tokenize();
+    Parser parser(tokens);
+    auto ast = parser.parse();
+    if (!ast) {
+        std::cerr << "Error: Parser returned NULL AST!" << std::endl;
+        return;
+    }
+    Interpreter interpreter;
+    interpreter.execute(ast);
+}
+
+static bool initWindowsConsole(bool wantVT) {
+#ifdef _WIN32
+    // Set UTF-8 code page for input/output
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+    if (wantVT) {
+        HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        if (hOut != INVALID_HANDLE_VALUE) {
+            DWORD mode = 0;
+            if (GetConsoleMode(hOut, &mode)) {
+                mode |= 0x0004; // ENABLE_VIRTUAL_TERMINAL_PROCESSING
+                if (!SetConsoleMode(hOut, mode)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+#else
+    (void)wantVT;
+    return true;
+#endif
+}
+
+static void startOracleMode(bool colorize, bool emoji) {
+    // Try to prepare Windows console for UTF-8 and VT; ignore failure (we'll fall back)
+#ifdef _WIN32
+    bool ok = initWindowsConsole(colorize || emoji);
+    if (!ok) { colorize = false; }
+#endif
+    Interpreter interpreter; // persistent across lines
+    if (colorize) {
+        std::cout << "\x1b[92m** The Oracle of Ardent **\x1b[0m" << std::endl;
+        std::cout << "\x1b[90mSpeak thy words (or say 'farewell' to depart).\x1b[0m" << std::endl;
+    } else {
+        std::cout << "** The Oracle of Ardent **" << std::endl;
+        std::cout << "Speak thy words (or say 'farewell' to depart)." << std::endl;
+    }
+    while (true) {
+        if (emoji) {
+            // Preferred: nib with variation selector plus a visible trailing space.
+            // Some Windows terminals render the emoji with double-width and "eat" the following space
+            // if it's inside the colored span. To guarantee a gap, emit one space inside the color span
+            // and one plain ASCII space after resetting color.
+            if (colorize) std::cout << "\n\x1b[96m✒️ \x1b[0m "; else std::cout << "\n✒️  ";
+        } else {
+            if (colorize) std::cout << "\n\x1b[96m> \x1b[0m"; else std::cout << "\n> ";
+        }
+        std::string line;
+        if (!std::getline(std::cin, line)) break;
+        if (line == "farewell" || line == "exit") {
+            if (colorize) std::cout << "\x1b[90mThe Oracle falls silent...\x1b[0m" << std::endl;
+            else std::cout << "The Oracle falls silent..." << std::endl;
+            break;
+        }
+        if (line.empty()) continue;
+        try {
+            Lexer lx(line);
+            auto toks = lx.tokenize();
+            Parser p(std::move(toks));
+            auto ast = p.parse();
+            if (ast) {
+                interpreter.execute(ast);
+                // Bind '_' to last result (typed if simple, phrase if complex)
+                Interpreter::Value v = interpreter.evaluateReplValue(ast);
+                if (std::holds_alternative<int>(v)) interpreter.assignVariable("_", std::get<int>(v));
+                else if (std::holds_alternative<bool>(v)) interpreter.assignVariable("_", std::get<bool>(v));
+                else if (std::holds_alternative<std::string>(v)) interpreter.assignVariable("_", std::get<std::string>(v));
+                else {
+                    std::string s = interpreter.stringifyValueForRepl(v);
+                    interpreter.assignVariable("_", s);
+                }
+            }
+        } catch (const std::exception& e) {
+            if (colorize) std::cerr << "\x1b[91mA curse was cast: " << e.what() << "\x1b[0m" << std::endl;
+            else std::cerr << "A curse was cast: " << e.what() << std::endl;
+        }
+    }
+}
+
+int main(int argc, char** argv) {
+    // Oracle mode: --oracle or -o, optional --color / --no-color, --emoji / --no-emoji
+    bool wantOracle = false;
+    bool colorize = true;  // default color highlight on
+    bool emoji = true; // default to emoji prompt
+    for (int i = 1; i < argc; ++i) {
+        std::string arg = argv[i];
+        if (arg == "--oracle" || arg == "-o") wantOracle = true;
+        else if (arg == "--color") colorize = true;
+        else if (arg == "--no-color") colorize = false;
+        else if (arg == "--emoji") emoji = true;
+        else if (arg == "--no-emoji") emoji = false;
+    }
+    if (wantOracle) {
+        startOracleMode(colorize, emoji);
+        return 0;
+    }
+    // Scroll mode: ardent <path>
+    if (argc > 1) {
+        std::string path = argv[1];
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl;
+            return 1;
+        }
+        std::string code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        runArdentProgram(code);
+        return 0;
+    }
+    
     std::string input =  R"ARDENT(
     Let it be proclaimed: "--- Core Demo ---"
     Let it be known throughout the land, a number named ct is of 0 winters.  
@@ -185,29 +314,26 @@ int main() {
     )ARDENT";
     
 
-    Lexer lexer(input);
-    std::vector<Token> tokens = lexer.tokenize();
-
-    std::cout << "=== Tokens Generated ===" << std::endl;
-    for (const auto& token : tokens) {
-        std::cout << "Token: " << token.value << ", Type: " << tokenTypeToString(token.type) << std::endl;
+    // Demo fallback (no arguments): keep token/AST debug visible
+    {
+        Lexer lexer(input);
+        std::vector<Token> tokens = lexer.tokenize();
+        std::cout << "=== Tokens Generated ===" << std::endl;
+        for (const auto& token : tokens) {
+            std::cout << "Token: " << token.value << ", Type: " << tokenTypeToString(token.type) << std::endl;
+        }
+        Parser parser(tokens);
+        auto ast = parser.parse();
+        if (!ast) {
+            std::cerr << "Error: Parser returned NULL AST!" << std::endl;
+            return 1;
+        }
+        std::cout << "=== AST Debug Output ===" << std::endl;
+        std::cout << typeid(*ast).name() << std::endl;
+        std::cout << "Parsing complete!" << std::endl;
+        Interpreter interpreter;
+        interpreter.execute(ast);
     }
-
-    Parser parser(tokens);
-    auto ast = parser.parse();
-if (!ast) {
-    std::cerr << "Error: Parser returned NULL AST!" << std::endl;
-    return 1;
-}
-
-std::cout << "=== AST Debug Output ===" << std::endl;
-std::cout << typeid(*ast).name() << std::endl;  // Print AST node type
-
-std::cout << "Parsing complete!" << std::endl;
-
-
-    Interpreter interpreter;
-    interpreter.execute(ast);
 
     return 0;
 }
