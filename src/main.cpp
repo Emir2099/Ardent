@@ -6,6 +6,10 @@
 #include <vector>
 #include <fstream>
 #include <string>
+#include <sstream>
+#include <chrono>
+#include <ctime>
+#include <iomanip>
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -49,34 +53,57 @@ static bool initWindowsConsole(bool wantVT) {
 #endif
 }
 
-static void startOracleMode(bool colorize, bool emoji) {
+static std::string nowTimestamp() {
+    using namespace std::chrono;
+    auto tp = system_clock::now();
+    std::time_t t = system_clock::to_time_t(tp);
+    std::tm tm{};
+#ifdef _WIN32
+    localtime_s(&tm, &t);
+#else
+    localtime_r(&t, &tm);
+#endif
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
+    return oss.str();
+}
+
+static void startOracleMode(bool colorize, bool emoji, bool poetic) {
     // Try to prepare Windows console for UTF-8 and VT; ignore failure (we'll fall back)
 #ifdef _WIN32
     bool ok = initWindowsConsole(colorize || emoji);
     if (!ok) { colorize = false; }
 #endif
     Interpreter interpreter; // persistent across lines
+    // Scroll logging: open append mode per session
+    std::ofstream scroll("ardent_scroll.log", std::ios::app);
+    int verse = 0;
     if (colorize) {
         std::cout << "\x1b[92m** The Oracle of Ardent **\x1b[0m" << std::endl;
-        std::cout << "\x1b[90mSpeak thy words (or say 'farewell' to depart).\x1b[0m" << std::endl;
+        std::cout << "\x1b[90;3mSpeak thy words (or say 'farewell' to depart).\x1b[0m" << std::endl;
     } else {
         std::cout << "** The Oracle of Ardent **" << std::endl;
         std::cout << "Speak thy words (or say 'farewell' to depart)." << std::endl;
     }
     while (true) {
         if (emoji) {
-            // Preferred: nib with variation selector plus a visible trailing space.
-            // Some Windows terminals render the emoji with double-width and "eat" the following space
-            // if it's inside the colored span. To guarantee a gap, emit one space inside the color span
-            // and one plain ASCII space after resetting color.
-            if (colorize) std::cout << "\n\x1b[96m✒️ \x1b[0m "; else std::cout << "\n✒️  ";
+            // Preferred prompt: place one space inside the colored span and one outside.
+            // Due to emoji width behavior, this yields exactly one visible gap across terminals.
+            if (colorize) std::cout << "\n\x1b[96m✒️ \x1b[0m "; else std::cout << "\n✒️ ";
         } else {
             if (colorize) std::cout << "\n\x1b[96m> \x1b[0m"; else std::cout << "\n> ";
         }
         std::string line;
         if (!std::getline(std::cin, line)) break;
+        // Log the verse input
+        ++verse;
+        if (scroll.good()) {
+            scroll << "[" << nowTimestamp() << "] [Verse " << verse << "] "
+                   << (emoji ? "✒️  " : "> ") << line << "\n";
+            scroll.flush();
+        }
         if (line == "farewell" || line == "exit") {
-            if (colorize) std::cout << "\x1b[90mThe Oracle falls silent...\x1b[0m" << std::endl;
+            if (colorize) std::cout << "\x1b[90;3mThe Oracle falls silent...\x1b[0m" << std::endl;
             else std::cout << "The Oracle falls silent..." << std::endl;
             break;
         }
@@ -87,6 +114,21 @@ static void startOracleMode(bool colorize, bool emoji) {
             Parser p(std::move(toks));
             auto ast = p.parse();
             if (ast) {
+                // Detect if last statement is an explicit proclamation to avoid double printing
+                bool explicitPrint = false;
+                if (auto block = std::dynamic_pointer_cast<BlockStatement>(ast)) {
+                    if (!block->statements.empty()) {
+                        auto &last = block->statements.back();
+                        explicitPrint = (bool)std::dynamic_pointer_cast<PrintStatement>(last);
+                        if (!explicitPrint) {
+                            if (auto be = std::dynamic_pointer_cast<BinaryExpression>(last)) {
+                                if (be->op.type == TokenType::IS_OF) {
+                                    explicitPrint = true; // treat declarations/assignments as non-printing
+                                }
+                            }
+                        }
+                    }
+                }
                 interpreter.execute(ast);
                 // Bind '_' to last result (typed if simple, phrase if complex)
                 Interpreter::Value v = interpreter.evaluateReplValue(ast);
@@ -97,10 +139,55 @@ static void startOracleMode(bool colorize, bool emoji) {
                     std::string s = interpreter.stringifyValueForRepl(v);
                     interpreter.assignVariable("_", s);
                 }
+                // Auto-print expressions with colorization (but not proclamations)
+                // Heuristic: declarative openings shouldn't auto-print in REPL
+                if (!explicitPrint) {
+                    std::string trimmed = line;
+                    // Trim leading spaces
+                    while (!trimmed.empty() && (trimmed[0]==' '||trimmed[0]=='\t')) trimmed.erase(trimmed.begin());
+                    if (trimmed.rfind("Let it be known", 0) == 0) explicitPrint = true;
+                }
+                if (!explicitPrint) {
+                    auto printColored = [&](const Interpreter::Value &val){
+                        if (!colorize) {
+                            if (std::holds_alternative<int>(val)) std::cout << std::get<int>(val) << std::endl;
+                            else if (std::holds_alternative<std::string>(val)) std::cout << std::get<std::string>(val) << std::endl;
+                            else if (std::holds_alternative<bool>(val)) std::cout << (std::get<bool>(val) ? "True" : "False") << std::endl;
+                            else std::cout << interpreter.stringifyValueForRepl(val) << std::endl;
+                            return;
+                        }
+                        if (std::holds_alternative<int>(val)) {
+                            std::cout << "\x1b[96m" << std::get<int>(val) << "\x1b[0m" << std::endl; // pale cyan
+                        } else if (std::holds_alternative<std::string>(val)) {
+                            std::cout << "\x1b[93m" << std::get<std::string>(val) << "\x1b[0m" << std::endl; // soft gold
+                        } else if (std::holds_alternative<bool>(val)) {
+                            bool b = std::get<bool>(val);
+                            std::cout << (b ? "\x1b[92mTrue\x1b[0m" : "\x1b[91mFalse\x1b[0m") << std::endl; // green/red
+                        } else {
+                            std::cout << "\x1b[90m" << interpreter.stringifyValueForRepl(val) << "\x1b[0m" << std::endl;
+                        }
+                    };
+                    printColored(v);
+                    if (poetic) {
+                        if (colorize) std::cout << "\x1b[90;3m"; // grey italic
+                        // Simple reflection by type
+                        if (std::holds_alternative<int>(v)) {
+                            std::cout << "(The numbers march, yet tell no lies.)";
+                        } else if (std::holds_alternative<std::string>(v)) {
+                            std::cout << "(Words, like silk, bind thought to breath.)";
+                        } else if (std::holds_alternative<bool>(v)) {
+                            std::cout << (std::get<bool>(v) ? "(Truth stands; the candle does not flicker.)" : "(Falsehood settles like dust upon the floor.)");
+                        } else {
+                            std::cout << "(Shapes and ledgers whisper of hidden order.)";
+                        }
+                        if (colorize) std::cout << "\x1b[0m";
+                        std::cout << std::endl;
+                    }
+                }
             }
         } catch (const std::exception& e) {
-            if (colorize) std::cerr << "\x1b[91mA curse was cast: " << e.what() << "\x1b[0m" << std::endl;
-            else std::cerr << "A curse was cast: " << e.what() << std::endl;
+            if (colorize) std::cerr << "\x1b[90;3m" << e.what() << "\x1b[0m" << std::endl;
+            else std::cerr << e.what() << std::endl;
         }
     }
 }
@@ -110,6 +197,7 @@ int main(int argc, char** argv) {
     bool wantOracle = false;
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
+    bool poetic = false; // default off
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--oracle" || arg == "-o") wantOracle = true;
@@ -117,9 +205,10 @@ int main(int argc, char** argv) {
         else if (arg == "--no-color") colorize = false;
         else if (arg == "--emoji") emoji = true;
         else if (arg == "--no-emoji") emoji = false;
+        else if (arg == "--poetic") poetic = true;
     }
     if (wantOracle) {
-        startOracleMode(colorize, emoji);
+        startOracleMode(colorize, emoji, poetic);
         return 0;
     }
     // Scroll mode: ardent <path>

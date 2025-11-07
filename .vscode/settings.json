@@ -58,6 +58,8 @@
         "variant": "cpp",
         "functional": "cpp",
         "fstream": "cpp",
-        "filesystem": "cpp"
+        "filesystem": "cpp",
+        "chrono": "cpp",
+        "iomanip": "cpp"
     }
 }
