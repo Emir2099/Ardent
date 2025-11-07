@@ -314,6 +314,13 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 16) == "Invoke the spell") {
             tokens.push_back(parseSpellCall());
         }
+        else if (input.substr(currentPos, 17) == "Invoke the spirit") {
+            // Native invocation: "Invoke the spirit ..."
+            tokens.push_back(Token(TokenType::NATIVE_CALL, "Invoke the spirit"));
+            currentPos += 17;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 19) == "From the scroll of") {
             tokens.push_back(Token(TokenType::FROM_SCROLL, "From the scroll of"));
             currentPos += 19;

@@ -157,6 +157,39 @@ int main() {
     }
     std::vector<TestCase> tests = {
         {
+            "native_add_print",
+            R"(\
+Let it be proclaimed: Invoke the spirit of math.add upon 2, 3\
+)",
+            "5"
+        },
+        {
+            "native_add_assign_and_print",
+            R"(\
+Let it be known throughout the land, a number named s is of Invoke the spirit of math.add upon 10, 20 winters.\
+Let it be proclaimed: s\
+)",
+            "30"
+        },
+        {
+            "native_missing_function_runtime_error",
+            R"(\
+Invoke the spirit of unknown.rite upon 1\
+)",
+            "",
+            false,
+            "",
+            true,
+            "spirits know not the rite"
+        },
+        {
+            "native_len_phrase",
+            R"(\
+Let it be proclaimed: Invoke the spirit of system.len upon "abc"\
+)",
+            "3"
+        },
+        {
             "string_concat_print",
             R"(\
 Let it be known throughout the land, a phrase named greeting is of "Hello".\

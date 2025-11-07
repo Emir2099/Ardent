@@ -148,6 +148,16 @@ int main() {
     Let it be proclaimed: who
     )ARDENT";
     
+    // Native Bridge demo (non-destructive append)
+    input += R"ARDENT(
+
+    Let it be proclaimed: "--- Native Bridge Demo ---"
+    Let it be proclaimed: "Sum is " + Invoke the spirit of math.add upon 2, 3
+    Let it be known throughout the land, a number named s is of Invoke the spirit of math.add upon 10, 20.
+    Let it be proclaimed: s
+    Let it be proclaimed: "Len of 'abc' is " + Invoke the spirit of system.len upon "abc"
+    )ARDENT";
+    
 
     Lexer lexer(input);
     std::vector<Token> tokens = lexer.tokenize();

@@ -185,6 +185,10 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
         // Support 'Invoke the spell ...' as an expression
         advance();
         node = parseSpellInvocation();
+    } else if (token.type == TokenType::NATIVE_CALL) {
+        // Support 'Invoke the spirit ...' as an expression
+        advance();
+        node = parseNativeInvocation();
     } else if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
         token = advance();  // Consume the token once
         node = std::make_shared<Expression>(token);
@@ -671,6 +675,8 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseSpellDefinition();
     } else if (match(TokenType::SPELL_CALL)) {
         return parseSpellInvocation();
+    } else if (match(TokenType::NATIVE_CALL)) {
+        return parseNativeInvocation();
     } else if (match(TokenType::FROM_SCROLL)) {
         return parseImportStatement();
     } else if (match(TokenType::UNFURL_SCROLL)) {
@@ -931,6 +937,35 @@ std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
         if (peek().type == TokenType::COMMA) advance(); else break;
     }
     return std::make_shared<SpellInvocation>(fullName, args);
+}
+
+// Parse native invocation: Invoke the spirit [of] name[.qual] upon args
+std::shared_ptr<ASTNode> Parser::parseNativeInvocation() {
+    // Skip optional determiners until first IDENTIFIER (handle optional 'of')
+    while (!isAtEnd() && !(peek().type == TokenType::IDENTIFIER)) advance();
+    // Accept and skip an initial 'of' if present
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "of") {
+        advance();
+    }
+    // Now expect the function name identifier
+    Token nameTok = consume(TokenType::IDENTIFIER, "Expected function name after 'Invoke the spirit'");
+    std::string fullName = nameTok.value;
+    while (!isAtEnd() && peek().type == TokenType::DOT) {
+        advance();
+        Token part = consume(TokenType::IDENTIFIER, "Expected identifier after '.' in qualified function name");
+        fullName += "." + part.value;
+    }
+    consume(TokenType::UPON, "Expected 'upon' after function name");
+    std::vector<std::shared_ptr<ASTNode>> args;
+    while (!isAtEnd()) {
+        TokenType t = peek().type;
+        if (t == TokenType::LET || t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::NATIVE_CALL) break;
+        if (t == TokenType::WHISPER || t == TokenType::SHOULD) break;
+        auto expr = parseExpression();
+        if (expr) args.push_back(expr); else break;
+        if (peek().type == TokenType::COMMA) advance(); else break;
+    }
+    return std::make_shared<NativeInvocation>(fullName, args);
 }
 
 // From the scroll of "path" draw all knowledge [as alias].

@@ -13,7 +13,8 @@ enum class TokenType {
     LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT,
     EXPAND, AMEND, REMOVE, ERASE,
     RETURN,
-    FROM_SCROLL, DRAW_ALL_KNOWLEDGE, TAKE, UNFURL_SCROLL
+    FROM_SCROLL, DRAW_ALL_KNOWLEDGE, TAKE, UNFURL_SCROLL,
+    NATIVE_CALL
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -77,6 +78,7 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::DRAW_ALL_KNOWLEDGE: return "DRAW_ALL_KNOWLEDGE";
         case TokenType::TAKE: return "TAKE";
         case TokenType::UNFURL_SCROLL: return "UNFURL_SCROLL";
+        case TokenType::NATIVE_CALL: return "NATIVE_CALL";
         default: return "UNKNOWN";
     }
 }

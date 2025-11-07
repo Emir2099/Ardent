@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <functional>
 #include "ast.h"
 
 class Interpreter {
@@ -14,6 +15,7 @@ public:
     using Value = std::variant<int, std::string, bool, std::vector<SimpleValue>, std::unordered_map<std::string, SimpleValue>>;
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
     struct Module { std::unordered_map<std::string, Value> variables; std::unordered_map<std::string, SpellDef> spells; };
+    using NativeFunc = std::function<Value(const std::vector<Value>&)>;
 private:
     // Nested lexical scopes: scopes[0] = global, scopes.back() = current
     std::vector<std::unordered_map<std::string, Value>> scopes;
@@ -32,6 +34,8 @@ private:
     std::unordered_map<std::string, Module> moduleCache;
     std::unordered_map<std::string, bool> importing;
     Module loadModule(const std::string& path);
+    // Native functions
+    std::unordered_map<std::string, NativeFunc> nativeRegistry;
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
     Value evaluateValue(std::shared_ptr<ASTNode> expr);
@@ -51,6 +55,7 @@ public:
     std::unordered_map<std::string, Value> getGlobals() const { return scopes.front(); }
     std::unordered_map<std::string, SpellDef> getSpells() const { return spells; }
     void registerSpell(const std::string& name, const SpellDef& def) { spells[name] = def; }
+    void registerNative(const std::string& name, NativeFunc fn) { nativeRegistry[name] = std::move(fn); }
 
 };
 

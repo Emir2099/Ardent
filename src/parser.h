@@ -28,6 +28,7 @@ private:
     std::shared_ptr<ASTNode> parseFunctionCall();
     std::shared_ptr<ASTNode> parseSpellDefinition();
     std::shared_ptr<ASTNode> parseSpellInvocation();
+    std::shared_ptr<ASTNode> parseNativeInvocation();
     std::shared_ptr<ASTNode> parseVariableDeclaration();
     std::shared_ptr<ASTNode> parseStatement();
     std::shared_ptr<ASTNode> parseWhileLoop();

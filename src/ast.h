@@ -106,6 +106,15 @@ public:
         : spellName(std::move(name)), args(std::move(args)) {}
 };
 
+// Native invocation: call a registered native function with argument expressions
+class NativeInvocation : public ASTNode {
+public:
+    std::string funcName;
+    std::vector<std::shared_ptr<ASTNode>> args;
+    NativeInvocation(std::string name, std::vector<std::shared_ptr<ASTNode>> args)
+        : funcName(std::move(name)), args(std::move(args)) {}
+};
+
 // Return statement inside spells
 class ReturnStatement : public ASTNode {
 public:

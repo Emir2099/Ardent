@@ -68,6 +68,32 @@ static std::string formatValue(const Interpreter::Value &v) {
 Interpreter::Interpreter() {
     // Initialize global scope
     scopes.emplace_back();
+    // Register built-in native functions
+    registerNative("math.add", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) {
+            std::cerr << "The spirits demand 2 offerings for 'math.add', yet " << args.size() << " were placed." << std::endl;
+            return 0;
+        }
+        auto toNum = [&](const Value &v) -> int {
+            if (std::holds_alternative<int>(v)) return std::get<int>(v);
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+            if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+            return 0;
+        };
+        return toNum(args[0]) + toNum(args[1]);
+    });
+    registerNative("system.len", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) {
+            std::cerr << "The spirits demand 1 offering for 'system.len', yet " << args.size() << " were placed." << std::endl;
+            return 0;
+        }
+        const Value &v = args[0];
+        if (std::holds_alternative<std::string>(v)) return static_cast<int>(std::get<std::string>(v).size());
+        if (std::holds_alternative<std::vector<SimpleValue>>(v)) return static_cast<int>(std::get<std::vector<SimpleValue>>(v).size());
+        if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return static_cast<int>(std::get<std::unordered_map<std::string, SimpleValue>>(v).size());
+        // numbers/bools -> length not meaningful; return 0
+        return 0;
+    });
 }
 
 void Interpreter::enterScope() { scopes.emplace_back(); }
@@ -232,6 +258,22 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             }
         }
         return out;
+    }
+    if (auto native = std::dynamic_pointer_cast<NativeInvocation>(expr)) {
+        auto it = nativeRegistry.find(native->funcName);
+        if (it == nativeRegistry.end()) {
+            std::cerr << "The spirits know not the rite '" << native->funcName << "'." << std::endl;
+            return 0;
+        }
+        std::vector<Value> argv;
+        argv.reserve(native->args.size());
+        for (auto &a : native->args) argv.push_back(evaluateValue(a));
+        try {
+            return it->second(argv);
+        } catch (...) {
+            std::cerr << "A rift silences the spirits during '" << native->funcName << "'." << std::endl;
+            return 0;
+        }
     }
     if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
         Value target = evaluateValue(idx->target);
@@ -654,6 +696,27 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             std::cout << (std::get<bool>(retVal) ? "True" : "False") << std::endl;
         }
     }
+    else if (auto native = std::dynamic_pointer_cast<NativeInvocation>(ast)) {
+        auto it = nativeRegistry.find(native->funcName);
+        if (it == nativeRegistry.end()) {
+            std::cerr << "The spirits know not the rite '" << native->funcName << "'." << std::endl;
+            return;
+        }
+        std::vector<Value> argv;
+        argv.reserve(native->args.size());
+        for (auto &a : native->args) argv.push_back(evaluateValue(a));
+        Value ret;
+        try { ret = it->second(argv); }
+        catch (...) {
+            std::cerr << "A rift silences the spirits during '" << native->funcName << "'." << std::endl;
+            return;
+        }
+        // Print return if simple
+        if (std::holds_alternative<std::string>(ret)) std::cout << std::get<std::string>(ret) << std::endl;
+        else if (std::holds_alternative<int>(ret)) std::cout << std::get<int>(ret) << std::endl;
+        else if (std::holds_alternative<bool>(ret)) std::cout << (std::get<bool>(ret) ? "True" : "False") << std::endl;
+        else std::cout << formatValue(ret) << std::endl;
+    }
     
 
 
@@ -929,6 +992,25 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         if (std::holds_alternative<bool>(retVal)) return std::get<bool>(retVal) ? std::string("True") : std::string("False");
         if (std::holds_alternative<int>(retVal)) return std::to_string(std::get<int>(retVal));
         return formatValue(retVal);
+    } else if (auto native = std::dynamic_pointer_cast<NativeInvocation>(expr)) {
+        auto it = nativeRegistry.find(native->funcName);
+        if (it == nativeRegistry.end()) {
+            std::cerr << "The spirits know not the rite '" << native->funcName << "'." << std::endl;
+            return std::string("");
+        }
+        std::vector<Value> argv;
+        argv.reserve(native->args.size());
+        for (auto &a : native->args) argv.push_back(evaluateValue(a));
+        Value ret;
+        try { ret = it->second(argv); }
+        catch (...) {
+            std::cerr << "A rift silences the spirits during '" << native->funcName << "'." << std::endl;
+            return std::string("");
+        }
+        if (std::holds_alternative<std::string>(ret)) return std::get<std::string>(ret);
+        if (std::holds_alternative<bool>(ret)) return std::get<bool>(ret) ? std::string("True") : std::string("False");
+        if (std::holds_alternative<int>(ret)) return std::to_string(std::get<int>(ret));
+        return formatValue(ret);
     }
     // Direct array/object literals: pretty-print
     if (std::dynamic_pointer_cast<ArrayLiteral>(expr) || std::dynamic_pointer_cast<ObjectLiteral>(expr)) {
@@ -946,6 +1028,9 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             runtimeError = false;
             return std::string("");
         }
+        if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+        if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+        if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
         if (std::holds_alternative<std::vector<SimpleValue>>(v) ||
             std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) {
             return formatValue(v);

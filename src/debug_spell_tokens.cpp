@@ -5,10 +5,8 @@
 #include "interpreter.h"
 #include "token.h"
 int main(){
-    std::string code = R"(By decree of the elders, a spell named forge is cast upon a traveler known as who:
-Let it be known throughout the land, a phrase named temp is of "Secret".
-Let it be proclaimed: "Crafting for " + who
-Invoke the spell forge upon "Rune"
+    std::string code = R"(\
+Let it be proclaimed: Invoke the spirit of math.add upon 2, 3\
 )";
     Lexer lexer(code);
     auto tokens = lexer.tokenize();
