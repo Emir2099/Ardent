@@ -95,6 +95,38 @@ int main() {
     Let it be known throughout the land, a phrase named result is of Invoke the spell bless upon "Gimli".
     Let it be proclaimed: result
     )ARDENT";
+
+    // Append Scope & Shadowing Demo (non-destructive)
+    input += R"ARDENT(
+    
+    Let it be proclaimed: "--- Scoping & Shadowing Demo ---"
+    Let it be known throughout the land, a phrase named name is of "Outer".
+    By decree of the elders, a spell named echo is cast upon a traveler known as name:
+        Let it be proclaimed: "Inner sees " + name
+    Invoke the spell echo upon "Inner"
+    Let it be proclaimed: name
+
+    Let it be proclaimed: "--- Spell Locals Isolation Demo ---"
+    By decree of the elders, a spell named forge is cast upon a traveler known as who:
+        Let it be known throughout the land, a phrase named temp is of "Secret".
+        Let it be proclaimed: "Crafting for " + who
+    Invoke the spell forge upon "Rune"
+    Let it be proclaimed: temp
+
+    Let it be proclaimed: "--- Return Non-Effect Demo ---"
+    Let it be known throughout the land, a phrase named result is of "Start".
+    By decree of the elders, a spell named giver is cast upon a warrior known as result:
+        And let it return "Gifted " + result
+    Let it be proclaimed: Invoke the spell giver upon "Inner"
+    Let it be proclaimed: result
+
+    Let it be proclaimed: "--- Global Persistence After Loop Demo ---"
+    Let it be known throughout the land, a number named outer is of 0 winters.
+    Whilst the sun doth rise outer remaineth below 3 so shall these words be spoken
+    outer
+    let outer ascend 1
+    Let it be proclaimed: outer
+    )ARDENT";
     
 
     Lexer lexer(input);

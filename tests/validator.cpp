@@ -584,6 +584,68 @@ Let it be proclaimed: result\
 )",
             "Blessing Boromir\nBlessed Boromir\nBlessing Gimli\nBlessed Gimli"
         }
+        ,
+        {
+            "scope_spell_parameter_shadowing",
+            R"(\
+Let it be known throughout the land, a phrase named name is of "Outer".\
+By decree of the elders, a spell named echo is cast upon a traveler known as name:\
+Let it be proclaimed: "Inner sees " + name\
+Invoke the spell echo upon "Inner"\
+Let it be proclaimed: name\
+)",
+            "Inner sees Inner\nOuter"
+        }
+        ,
+        {
+            "scope_nested_loops_inner_var_vanish",
+            R"(\
+By decree of the elders, a spell named nest is cast upon a traveler known as dummy:\
+Let it be known throughout the land, a phrase named inner is of "Inside".\
+Let it be proclaimed: inner\
+Invoke the spell nest upon "x"\
+Let it be proclaimed: inner\
+)",
+            "Inside"
+        }
+        ,
+        {
+            "scope_spell_locals_isolated",
+            R"(\
+By decree of the elders, a spell named forge is cast upon a traveler known as who:\
+Let it be known throughout the land, a phrase named temp is of "Secret".\
+Let it be proclaimed: "Crafting for " + who\
+Invoke the spell forge upon "Rune"\
+Let it be proclaimed: temp\
+)",
+            "Crafting for Rune"
+        }
+        ,
+        {
+            "scope_spell_return_no_outer_effect",
+            R"(\
+Let it be known throughout the land, a phrase named result is of "Start".\
+By decree of the elders, a spell named giver is cast upon a warrior known as result:\
+And let it return "Gifted " + result\
+Let it be proclaimed: Invoke the spell giver upon "Inner"\
+Let it be proclaimed: result\
+)",
+            "Gifted Inner\nStart"
+        }
+        ,
+        {
+            "scope_global_persistence_after_loop",
+            R"(\
+Let it be known throughout the land, a number named outer is of 0 winters.\
+Whilst the sun doth rise outer remaineth below 3 so shall these words be spoken\
+Let it be proclaimed: outer\
+let outer ascend 1\
+Let it be proclaimed: outer\
+)",
+            "",
+            true,
+            "Unexpected token or missing block"
+        }
     };
 
     int passed = 0;

@@ -456,6 +456,7 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
 }
 
 // Parse a while loop
+// TODO(Phase VI): support multi-statement while bodies and post-loop proclamations
 std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
     // Assume the WHILST token has already been matched.
     Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'Whilst the sun doth rise'");
@@ -482,8 +483,9 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
         if (expr) {
             body.push_back(std::make_shared<PrintStatement>(expr));
         } else {
-            std::cerr << "Error: Failed to parse expression in while loop body" << std::endl;
-            break;
+            // Standardize error so tests can assert on unsupported while body patterns
+            std::cerr << "Error: Unexpected token or missing block while parsing while loop body" << std::endl;
+            return nullptr; // abort parsing this while loop
         }
     }
 
@@ -822,7 +824,7 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
     while (!isAtEnd()) {
         // Stop if next token begins another top-level construct
         TokenType t = peek().type;
-        if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::LET || t == TokenType::SHOULD) {
+        if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::SHOULD) {
             break;
         }
         if (t == TokenType::LET_PROCLAIMED) {

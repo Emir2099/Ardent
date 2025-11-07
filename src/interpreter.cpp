@@ -59,30 +59,74 @@ static std::string formatValue(const Interpreter::Value &v) {
     return "";
 }
 
+// ===== Scoping helpers =====
+Interpreter::Interpreter() {
+    // Initialize global scope
+    scopes.emplace_back();
+}
+
+void Interpreter::enterScope() { scopes.emplace_back(); }
+void Interpreter::exitScope() { if (scopes.size() > 1) scopes.pop_back(); }
+
+int Interpreter::findScopeIndex(const std::string& name) const {
+    for (int i = static_cast<int>(scopes.size()) - 1; i >= 0; --i) {
+        if (scopes[static_cast<size_t>(i)].find(name) != scopes[static_cast<size_t>(i)].end()) return i;
+    }
+    return -1;
+}
+
+bool Interpreter::lookupVariable(const std::string& name, Value& out) const {
+    int idx = findScopeIndex(name);
+    if (idx >= 0) { out = scopes[static_cast<size_t>(idx)].at(name); return true; }
+    return false;
+}
+
+void Interpreter::declareVariable(const std::string& name, const Value& value) {
+    scopes.back()[name] = value;
+    // Debug
+    std::cout << "Variable assigned: " << name << " = ";
+    if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
+    else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+    else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+    else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+    else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
+    std::cout << std::endl;
+}
+
+void Interpreter::assignVariableAny(const std::string& name, const Value& value) {
+    int idx = findScopeIndex(name);
+    if (idx >= 0) {
+        scopes[static_cast<size_t>(idx)][name] = value;
+    } else {
+        scopes.back()[name] = value; // implicit local
+    }
+    // Debug
+    std::cout << "Variable assigned: " << name << " = ";
+    if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
+    else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+    else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+    else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+    else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
+    std::cout << std::endl;
+}
+
 void Interpreter::assignVariable(const std::string& name, int value) {
-    variables[name] = value;
-    std::cout << "Variable assigned: " << name << " = " << value << std::endl;
+    assignVariableAny(name, Value(value));
 }
 
 void Interpreter::assignVariable(const std::string& name, const std::string& value) {
-    variables[name] = value;
-    std::cout << "Variable assigned: " << name << " = " << value << std::endl;
+    assignVariableAny(name, Value(value));
 }
 
 void Interpreter::assignVariable(const std::string& name, bool value) {
-    variables[name] = value;
-    std::cout << "Variable assigned: " << name << " = " << (value ? "True" : "False") << std::endl;
+    assignVariableAny(name, Value(value));
 }
 
 int Interpreter::getIntVariable(const std::string& name) {
-    auto it = variables.find(name);
-    if (it != variables.end()) {
-        if (std::holds_alternative<int>(it->second)) {
-            return std::get<int>(it->second);
-        }
-        if (std::holds_alternative<bool>(it->second)) {
-            return std::get<bool>(it->second) ? 1 : 0;
-        }
+    Value v;
+    if (lookupVariable(name, v)) {
+        if (std::holds_alternative<int>(v)) return std::get<int>(v);
+        if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
         std::cerr << "Error: Variable '" << name << "' is not a number" << std::endl;
     } else {
         std::cerr << "Error: Undefined variable '" << name << "'" << std::endl;
@@ -91,18 +135,11 @@ int Interpreter::getIntVariable(const std::string& name) {
 }
 
 std::string Interpreter::getStringVariable(const std::string& name) {
-    auto it = variables.find(name);
-    if (it != variables.end()) {
-        if (std::holds_alternative<std::string>(it->second)) {
-            return std::get<std::string>(it->second);
-        }
-        // If it's an int, convert to string (useful for printing)
-        if (std::holds_alternative<int>(it->second)) {
-            return std::to_string(std::get<int>(it->second));
-        }
-        if (std::holds_alternative<bool>(it->second)) {
-            return std::get<bool>(it->second) ? std::string("True") : std::string("False");
-        }
+    Value v;
+    if (lookupVariable(name, v)) {
+        if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+        if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+        if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
     } else {
         std::cerr << "Error: Undefined variable '" << name << "'" << std::endl;
     }
@@ -121,8 +158,8 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             case TokenType::BOOLEAN:
                 return e->token.value == "True";
             case TokenType::IDENTIFIER: {
-                auto it = variables.find(e->token.value);
-                if (it != variables.end()) return it->second;
+                Value v;
+                if (lookupVariable(e->token.value, v)) return v;
                 std::cerr << "Error: Undefined variable '" << e->token.value << "'" << std::endl;
                 return 0;
             }
@@ -157,13 +194,11 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
             return 0;
         }
-        // Bind arguments with shadowing
-        std::unordered_map<std::string, Value> previous;
+        // New lexical scope for parameters
+        enterScope();
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
-            auto vit = variables.find(def.params[i]);
-            if (vit != variables.end()) previous[def.params[i]] = vit->second;
-            variables[def.params[i]] = val;
+            declareVariable(def.params[i], val);
         }
         Value retVal = std::string("");
         bool hasReturn = false;
@@ -175,11 +210,7 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             }
             execute(stmt);
         }
-        // Restore
-        for (const auto &p : def.params) {
-            auto pit = previous.find(p);
-            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
-        }
+        exitScope();
         if (!hasReturn) return std::string("");
         return retVal;
     }
@@ -444,16 +475,8 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             if (leftExpr) {
                 std::string varName = leftExpr->token.value;
                 Value rhs = evaluateValue(binExpr->right);
-                // Store any value type, including order and tome
-                variables[varName] = rhs;
-                // Debug print
-                std::cout << "Variable assigned: " << varName << " = ";
-                if (std::holds_alternative<int>(rhs)) std::cout << std::get<int>(rhs);
-                else if (std::holds_alternative<std::string>(rhs)) std::cout << std::get<std::string>(rhs);
-                else if (std::holds_alternative<bool>(rhs)) std::cout << (std::get<bool>(rhs) ? "True" : "False");
-                else if (std::holds_alternative<std::vector<SimpleValue>>(rhs)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(rhs).size() << "]";
-                else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(rhs)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(rhs).size() << "}";
-                std::cout << std::endl;
+                // Assign into nearest scope (or current if new)
+                assignVariableAny(varName, rhs);
             }
         } else {
             // Otherwise, simply execute left and right.
@@ -466,9 +489,13 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         std::cout << "Executing IF condition..." << std::endl;
         int cond = evaluateExpr(ifStmt->condition);
         if (cond != 0) {
+            enterScope();
             execute(ifStmt->thenBranch);
+            exitScope();
         } else if (ifStmt->elseBranch) {
+            enterScope();
             execute(ifStmt->elseBranch);
+            exitScope();
         }
     }
      // Handle while loop execution
@@ -483,16 +510,17 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         executeDoWhileLoop(doWhileStmt);
     }
     else if (auto rite = std::dynamic_pointer_cast<CollectionRite>(ast)) {
-        // Clone-modify-reassign pattern
-        auto it = variables.find(rite->varName);
-        if (it == variables.end()) {
+        // Clone-modify-reassign pattern with scoped lookup
+        int scopeIdx = findScopeIndex(rite->varName);
+        if (scopeIdx < 0) {
             std::cerr << "Error: Undefined collection '" << rite->varName << "'" << std::endl;
             return;
         }
+        Value current = scopes[static_cast<size_t>(scopeIdx)][rite->varName];
         if (rite->riteType == CollectionRiteType::OrderExpand || rite->riteType == CollectionRiteType::OrderRemove) {
-            if (!std::holds_alternative<std::vector<SimpleValue>>(it->second)) {
+            if (!std::holds_alternative<std::vector<SimpleValue>>(current)) {
                 std::cerr << "TypeError: '" << rite->varName << "' is not an order" << std::endl; return; }
-            auto vec = std::get<std::vector<SimpleValue>>(it->second); // clone
+            auto vec = std::get<std::vector<SimpleValue>>(current); // clone
             if (rite->riteType == CollectionRiteType::OrderExpand) {
                 Value v = evaluateValue(rite->valueExpr);
                 if (std::holds_alternative<int>(v)) vec.emplace_back(std::get<int>(v));
@@ -511,12 +539,12 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                 };
                 vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const SimpleValue &sv){ if (!removed && equalsSimple(sv)) { removed=true; return true;} return false;}), vec.end());
             }
-            variables[rite->varName] = vec;
+            scopes[static_cast<size_t>(scopeIdx)][rite->varName] = vec;
         } else {
             // Tome amend/erase
-            if (!std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(it->second)) {
+            if (!std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(current)) {
                 std::cerr << "TypeError: '" << rite->varName << "' is not a tome" << std::endl; return; }
-            auto mp = std::get<std::unordered_map<std::string, SimpleValue>>(it->second); // clone
+            auto mp = std::get<std::unordered_map<std::string, SimpleValue>>(current); // clone
             Value keyV = evaluateValue(rite->keyExpr);
             if (!std::holds_alternative<std::string>(keyV)) { std::cerr << "TypeError: Tome keys must be phrases" << std::endl; return; }
             std::string key = std::get<std::string>(keyV);
@@ -529,7 +557,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             } else {
                 mp.erase(key);
             }
-            variables[rite->varName] = mp;
+            scopes[static_cast<size_t>(scopeIdx)][rite->varName] = mp;
         }
     }
     else if (auto spellDef = std::dynamic_pointer_cast<SpellStatement>(ast)) {
@@ -547,13 +575,11 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
             return;
         }
-        // Create local scope overlay: save old values of parameters if they exist
-        std::unordered_map<std::string, Value> previous;
+        // Enter a new scope for spell parameters
+        enterScope();
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
-            auto vit = variables.find(def.params[i]);
-            if (vit != variables.end()) previous[def.params[i]] = vit->second;
-            variables[def.params[i]] = val;
+            declareVariable(def.params[i], val);
         }
         // Execute body and capture possible return value
         Value retVal = 0;
@@ -566,11 +592,8 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             }
             execute(stmt);
         }
-        // Restore previous values (shadowing semantics)
-        for (const auto &p : def.params) {
-            auto pit = previous.find(p);
-            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
-        }
+        // Exit spell scope
+        exitScope();
         // If invocation used in a print or assignment context, variable evaluation handles it.
         // For standalone invocation, if returned a phrase, print it automatically (optional design choice).
         if (hasReturn && std::holds_alternative<std::string>(retVal)) {
@@ -610,8 +633,7 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
     std::string varName = loop->loopVar->token.value;
     int limitVal = evaluateExpr(loop->limit);
     int stepVal = evaluateExpr(loop->step);
-
-    if (variables.find(varName) == variables.end()) {
+    if (findScopeIndex(varName) < 0) {
         std::cerr << "Error: Undefined loop variable '" << varName << "'" << std::endl;
         return;
     }
@@ -633,17 +655,14 @@ void Interpreter::executeWhileLoop(std::shared_ptr<WhileLoop> loop) {
 
         if (!conditionMet) break;
 
-        // Execute body
-        for (const auto& stmt : loop->body) {
-            execute(stmt);
-        }
+        // Execute body in its own scope per iteration
+        enterScope();
+        for (const auto& stmt : loop->body) { execute(stmt); }
+        exitScope();
 
         // Update variable
-        if (loop->stepDirection == TokenType::DESCEND) {
-            variables[varName] = getIntVariable(varName) - stepVal;
-        } else {
-            variables[varName] = getIntVariable(varName) + stepVal;
-        }
+        if (loop->stepDirection == TokenType::DESCEND) assignVariableAny(varName, Value(getIntVariable(varName) - stepVal));
+        else assignVariableAny(varName, Value(getIntVariable(varName) + stepVal));
     }
 }
 
@@ -653,37 +672,39 @@ void Interpreter::executeForLoop(std::shared_ptr<ForLoop> loop) {
     std::string varName;
     if (auto expr = std::dynamic_pointer_cast<Expression>(loop->init)) {
     varName = expr->token.value;
-    variables[varName] = evaluateExpr(loop->init);
+    assignVariableAny(varName, Value(evaluateExpr(loop->init)));
     }
 
     // Loop while condition holds
     while (evaluateExpr(loop->condition)) {
-        // Execute the loop body (BlockStatement)
+        // Execute the loop body (BlockStatement) in new scope each iteration
+        enterScope();
         execute(loop->body);
+        exitScope();
     int stepVal = evaluateExpr(loop->increment);
     if (loop->stepDirection == TokenType::DESCEND) stepVal = -stepVal;
     // Increment loop variable
-    variables[varName] = getIntVariable(varName) + stepVal;
+    assignVariableAny(varName, Value(getIntVariable(varName) + stepVal));
     }
 }
 
 
 void Interpreter::executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop) {
     std::string varName = loop->loopVar->token.value;
-    if (variables.find(varName) == variables.end()) {
+    if (findScopeIndex(varName) < 0) {
         std::cerr << "Error: Undefined loop variable '" << varName << "'" << std::endl;
         return;
     }
     do {
         // Execute body
-        for (const auto &stmt : loop->body->statements) {
-            execute(stmt);
-        }
+        enterScope();
+        for (const auto &stmt : loop->body->statements) { execute(stmt); }
+        exitScope();
         // Apply update
         if (loop->update) {
             int inc = evaluateExpr(loop->update);
             if (loop->stepDirection == TokenType::DESCEND) inc = -inc;
-            variables[varName] = getIntVariable(varName) + inc;
+            assignVariableAny(varName, Value(getIntVariable(varName) + inc));
         }
     } while (evaluateExpr(loop->condition)); // Loop while condition is TRUE
 }
@@ -695,14 +716,11 @@ void Interpreter::evaluateExpression(std::shared_ptr<ASTNode> expr) {
     if (auto value = std::dynamic_pointer_cast<Expression>(expr)) {
         if (value->token.type == TokenType::IDENTIFIER) {
             std::string varName = value->token.value;
-            if (variables.find(varName) != variables.end()) {
-                if (std::holds_alternative<int>(variables[varName])) {
-                    std::cout << "valueeee: " << std::get<int>(variables[varName]) << std::endl;  
-                } else if (std::holds_alternative<std::string>(variables[varName])) {
-                    std::cout << "valueeee: " << std::get<std::string>(variables[varName]) << std::endl;  
-                } else if (std::holds_alternative<bool>(variables[varName])) {
-                    std::cout << "valueeee: " << (std::get<bool>(variables[varName]) ? "True" : "False") << std::endl;  
-                }
+            Value v;
+            if (lookupVariable(varName, v)) {
+                if (std::holds_alternative<int>(v)) std::cout << "valueeee: " << std::get<int>(v) << std::endl;
+                else if (std::holds_alternative<std::string>(v)) std::cout << "valueeee: " << std::get<std::string>(v) << std::endl;
+                else if (std::holds_alternative<bool>(v)) std::cout << "valueeee: " << (std::get<bool>(v) ? "True" : "False") << std::endl;
             } else {
                 std::cerr << "Error: Undefined variable '" << varName << "'" << std::endl;
             }
@@ -726,21 +744,12 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             return strExpr->token.value; // print literal True/False
         } else if (strExpr->token.type == TokenType::IDENTIFIER) {
             // Return string value for identifiers if present, otherwise number/bool-as-string
-            auto it = variables.find(strExpr->token.value);
-            if (it != variables.end()) {
-                if (std::holds_alternative<std::string>(it->second)) {
-                    return std::get<std::string>(it->second);
-                }
-                if (std::holds_alternative<bool>(it->second)) {
-                    return std::get<bool>(it->second) ? std::string("True") : std::string("False");
-                }
-                if (std::holds_alternative<int>(it->second)) {
-                    return std::to_string(std::get<int>(it->second));
-                }
-                if (std::holds_alternative<std::vector<SimpleValue>>(it->second) ||
-                    std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(it->second)) {
-                    return formatValue(it->second);
-                }
+            Value v;
+            if (lookupVariable(strExpr->token.value, v)) {
+                if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+                if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
+                if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
+                if (std::holds_alternative<std::vector<SimpleValue>>(v) || std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return formatValue(v);
             }
             std::cerr << "Error: Undefined variable '" << strExpr->token.value << "'" << std::endl;
             return "";
@@ -795,8 +804,8 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
                 if (auto e = std::dynamic_pointer_cast<Expression>(n)) {
                     if (e->token.type == TokenType::STRING) return true;
                     if (e->token.type == TokenType::IDENTIFIER) {
-                        auto it = variables.find(e->token.value);
-                        if (it != variables.end() && std::holds_alternative<std::string>(it->second)) return true;
+                        Value tmp;
+                        if (lookupVariable(e->token.value, tmp) && std::holds_alternative<std::string>(tmp)) return true;
                     }
                 }
                 if (auto c = std::dynamic_pointer_cast<CastExpression>(n)) {
@@ -848,12 +857,10 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
             return std::string("");
         }
-        std::unordered_map<std::string, Value> previous;
+        enterScope();
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
-            auto vit = variables.find(def.params[i]);
-            if (vit != variables.end()) previous[def.params[i]] = vit->second;
-            variables[def.params[i]] = val;
+            declareVariable(def.params[i], val);
         }
         Value retVal = std::string("");
         bool hasReturn = false;
@@ -865,10 +872,7 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             }
             execute(stmt);
         }
-        for (const auto &p : def.params) {
-            auto pit = previous.find(p);
-            if (pit != previous.end()) variables[p] = pit->second; else variables.erase(p);
-        }
+        exitScope();
         // Pretty print result if present
         if (!hasReturn) return std::string("");
         if (std::holds_alternative<std::string>(retVal)) return std::get<std::string>(retVal);

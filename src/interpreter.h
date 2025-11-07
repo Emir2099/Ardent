@@ -8,11 +8,20 @@
 
 class Interpreter {
 public:
+    Interpreter();
     // Allow integers, strings, and booleans as variable values
     using SimpleValue = std::variant<int, std::string, bool>;
     using Value = std::variant<int, std::string, bool, std::vector<SimpleValue>, std::unordered_map<std::string, SimpleValue>>;
 private:
-    std::unordered_map<std::string, Value> variables; // Stores variables and their values
+    // Nested lexical scopes: scopes[0] = global, scopes.back() = current
+    std::vector<std::unordered_map<std::string, Value>> scopes;
+    // Helpers for scoping
+    void enterScope();
+    void exitScope();
+    void declareVariable(const std::string& name, const Value& value);
+    void assignVariableAny(const std::string& name, const Value& value);
+    bool lookupVariable(const std::string& name, Value& out) const;
+    int findScopeIndex(const std::string& name) const; // -1 if not found
     // Stored spells: name -> (param list, body)
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
     std::unordered_map<std::string, SpellDef> spells;
