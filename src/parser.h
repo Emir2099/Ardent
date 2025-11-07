@@ -41,6 +41,9 @@ private:
     std::shared_ptr<ASTNode> parseImportStatement();
     std::shared_ptr<ASTNode> parseUnfurl();
     std::shared_ptr<ASTNode> parseTryCatch();
+    // Chronicle rites helpers
+    std::shared_ptr<ASTNode> parseInscribe(bool append);
+    std::shared_ptr<ASTNode> parseBanish();
     
 public:
     Parser(std::vector<Token> tokens);

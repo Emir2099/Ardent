@@ -115,6 +115,77 @@ Interpreter::Interpreter() {
         if (b == 0) throw ArdentError("A curse was cast: Division by zero in spirit 'math.divide'.");
         return a / b;
     });
+    // Chronicle Rites: file I/O with sandboxing
+    auto pathAllowed = [](const std::string &path) -> bool {
+        if (path.empty()) return false;
+        // Disallow absolute and parent traversal
+        if (path.size() > 1 && path[1] == ':') return false; // drive letter
+        if (path[0] == '/' || path[0] == '\\') return false;
+        if (path.find("..") != std::string::npos) return false;
+        return true;
+    };
+    registerNative("chronicles.read", [pathAllowed](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) {
+            throw ArdentError("The spirits demand 1 offering for 'chronicles.read', yet " + std::to_string(args.size()) + " were placed.");
+        }
+        if (!std::holds_alternative<std::string>(args[0])) {
+            throw ArdentError("A scroll path must be a phrase.");
+        }
+        std::string path = std::get<std::string>(args[0]);
+        if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
+        std::ifstream in(path, std::ios::binary);
+        if (!in) throw ArdentError("The scroll cannot be opened: '" + path + "'.");
+        std::ostringstream ss; ss << in.rdbuf();
+        return ss.str();
+    });
+    registerNative("chronicles.write", [pathAllowed](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'chronicles.write'.");
+        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::get<std::string>(args[0]);
+        if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
+        std::string content;
+        const Value &v = args[1];
+        if (std::holds_alternative<std::string>(v)) content = std::get<std::string>(v);
+        else if (std::holds_alternative<int>(v)) content = std::to_string(std::get<int>(v));
+        else if (std::holds_alternative<bool>(v)) content = std::get<bool>(v) ? "True" : "False";
+        else content = formatValue(v);
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if (!out) throw ArdentError("The scroll cannot be opened: '" + path + "'.");
+        out << content;
+        return 0;
+    });
+    registerNative("chronicles.append", [pathAllowed](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'chronicles.append'.");
+        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::get<std::string>(args[0]);
+        if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
+        std::string content;
+        const Value &v = args[1];
+        if (std::holds_alternative<std::string>(v)) content = std::get<std::string>(v);
+        else if (std::holds_alternative<int>(v)) content = std::to_string(std::get<int>(v));
+        else if (std::holds_alternative<bool>(v)) content = std::get<bool>(v) ? "True" : "False";
+        else content = formatValue(v);
+        std::ofstream out(path, std::ios::binary | std::ios::app);
+        if (!out) throw ArdentError("The scroll cannot be opened: '" + path + "'.");
+        out << content;
+        return 0;
+    });
+    registerNative("chronicles.exists", [pathAllowed](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) throw ArdentError("The spirits demand 1 offering for 'chronicles.exists'.");
+        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::get<std::string>(args[0]);
+        if (!pathAllowed(path)) return false;
+        std::error_code ec; return std::filesystem::exists(path, ec);
+    });
+    registerNative("chronicles.delete", [pathAllowed](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) throw ArdentError("The spirits demand 1 offering for 'chronicles.delete'.");
+        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::get<std::string>(args[0]);
+        if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
+        std::error_code ec; bool ok = std::filesystem::remove(path, ec);
+        if (!ok && ec) throw ArdentError("The scroll cannot be banished: '" + path + "'.");
+        return ok ? 1 : 0;
+    });
 }
 
 void Interpreter::enterScope() { scopes.emplace_back(); }

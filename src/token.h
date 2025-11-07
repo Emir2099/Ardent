@@ -15,7 +15,8 @@ enum class TokenType {
     RETURN,
     FROM_SCROLL, DRAW_ALL_KNOWLEDGE, TAKE, UNFURL_SCROLL,
     NATIVE_CALL,
-    TRY, CATCH, FINALLY, CURSE, OMEN
+    TRY, CATCH, FINALLY, CURSE, OMEN,
+    INSCRIBE, ETCH, READING_FROM, BANISH
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -85,6 +86,10 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::FINALLY: return "FINALLY";
         case TokenType::CURSE: return "CURSE";
         case TokenType::OMEN: return "OMEN";
+        case TokenType::INSCRIBE: return "INSCRIBE";
+        case TokenType::ETCH: return "ETCH";
+        case TokenType::READING_FROM: return "READING_FROM";
+        case TokenType::BANISH: return "BANISH";
         default: return "UNKNOWN";
     }
 }

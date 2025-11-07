@@ -177,6 +177,21 @@ std::shared_ptr<ASTNode> Parser::parseCast() {
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
     std::shared_ptr<ASTNode> node;
+    // Special Chronicle existence pattern: the scroll "path" existeth
+    if (token.type == TokenType::IDENTIFIER && token.value == "the") {
+        size_t save = current;
+        advance();
+        bool ok = true;
+        if (!( !isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scroll")) ok = false; else advance();
+        if (!( !isAtEnd() && peek().type == TokenType::STRING)) ok = false; 
+        Token pathTok = ok ? advance() : Token(TokenType::INVALID, "");
+        if (!( !isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "existeth" || peek().value == "exist"))) ok = false; else advance();
+        if (ok) {
+            std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
+            return std::make_shared<NativeInvocation>("chronicles.exists", args);
+        }
+        current = save; // restore if not matched
+    }
     if (token.type == TokenType::LBRACKET) {
         node = parseArrayLiteral();
     } else if (token.type == TokenType::LBRACE) {
@@ -396,11 +411,16 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     }
     Token varName = consume(TokenType::IDENTIFIER, "Expected variable name after 'named'");
     consume(TokenType::IS_OF, "Expected 'is of' after variable name");
-    // Accept either a literal (STRING/BOOLEAN/NUMBER) or a full expression (supports +, cast, etc.)
+    // Accept either a literal (STRING/BOOLEAN/NUMBER), a Chronicle read, or a full expression
     std::shared_ptr<ASTNode> rhsNode;
     bool simpleLiteral = false;
     Token value(TokenType::INVALID, "");
-    if (peek().type == TokenType::STRING) {
+    if (match(TokenType::READING_FROM) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "reading" && (advance(), !isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "from" && (advance(), true)))) {
+        Token pathTok = consume(TokenType::STRING, "Expected path after 'reading from'");
+        std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
+        rhsNode = std::make_shared<NativeInvocation>("chronicles.read", args);
+    }
+    else if (peek().type == TokenType::STRING) {
         value = advance(); simpleLiteral = true;
         rhsNode = std::make_shared<Expression>(value);
     } else if (peek().type == TokenType::BOOLEAN) {
@@ -744,6 +764,12 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
         return std::make_shared<PrintStatement>(expr);
+    } else if (match(TokenType::INSCRIBE)) {
+        return parseInscribe(false);
+    } else if (match(TokenType::ETCH)) {
+        return parseInscribe(true);
+    } else if (match(TokenType::BANISH)) {
+        return parseBanish();
     } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "From") {
         // Fallback wordy import: From the scroll of "path" (draw all knowledge [as alias] | take [the] [spells] ...)
         // Consume 'From the scroll of'
@@ -801,7 +827,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         // Fallback wordy Try
         advance();
         return parseTryCatch();
-    } else if (peek().type == TokenType::STRING ||
+    } else if (
                peek().type == TokenType::NUMBER ||
                peek().type == TokenType::IDENTIFIER) {
         // Special-case: if upcoming identifiers are 'it be proclaimed', treat as a print statement header
@@ -1077,4 +1103,34 @@ std::shared_ptr<ASTNode> Parser::parseUnfurl() {
     Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
     if (!isAtEnd() && peek().type == TokenType::DOT) advance();
     return std::make_shared<UnfurlInclude>(pathTok.value);
+}
+
+// Chronicle Rites: Inscribe/Etch upon "path" the words <expr>
+std::shared_ptr<ASTNode> Parser::parseInscribe(bool append) {
+    // Accept optional 'upon'
+    if (!isAtEnd() && peek().type == TokenType::UPON) advance();
+    Token pathTok = consume(TokenType::STRING, "Expected path after 'upon'");
+    // Optional 'the words'
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "words" || peek().value == "word")) advance();
+    auto contentExpr = parseExpression();
+    if (!contentExpr) return nullptr;
+    std::vector<std::shared_ptr<ASTNode>> args;
+    args.push_back(std::make_shared<Expression>(pathTok));
+    args.push_back(contentExpr);
+    return std::make_shared<NativeInvocation>(append ? "chronicles.append" : "chronicles.write", args);
+}
+
+// Banish the scroll "path".
+std::shared_ptr<ASTNode> Parser::parseBanish() {
+    // In lexer we consumed 'Banish the scroll', so just expect path
+    // Skip optional words 'the scroll'
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scroll") advance();
+    Token pathTok = consume(TokenType::STRING, "Expected path after 'Banish' rite");
+    if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+    // Defensive: if an extra stray string token remains (e.g., lexing quirk), consume it
+    if (!isAtEnd() && peek().type == TokenType::STRING) advance();
+    std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
+    return std::make_shared<NativeInvocation>("chronicles.delete", args);
 }

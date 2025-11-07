@@ -157,6 +157,39 @@ int main() {
     }
     std::vector<TestCase> tests = {
         {
+            "chronicles_write_read_append_exists_delete",
+            R"(\
+Let it be proclaimed: "--- Chronicle Rites Demo ---"\
+\
+Inscribe upon "epic.txt" the words "In the beginning, there was code."\
+Let it be proclaimed: "Written epic.txt"\
+\
+Let it be known throughout the land, a phrase named lines is of reading from "epic.txt".\
+Let it be proclaimed: lines\
+\
+Etch upon "epic.txt" the words "\nAnd thus Ardent was born."\
+Let it be proclaimed: "Appended new verse."\
+\
+Let it be known throughout the land, a truth named exists is of Invoke the spirit of chronicles.exists upon "epic.txt".\
+Let it be proclaimed: exists\
+\
+Banish the scroll "epic.txt".\
+Let it be proclaimed: "Scroll destroyed."\
+)",
+            "--- Chronicle Rites Demo ---\nWritten epic.txt\nIn the beginning, there was code.\nAppended new verse.\nTrue\nScroll destroyed."
+        },
+        {
+            "chronicles_read_missing_file_runtime_error",
+            R"(\
+Let it be known throughout the land, a phrase named bad is of reading from "nope.txt".\
+)",
+            "",
+            false,
+            "",
+            true,
+            "The scroll cannot be opened"
+        },
+        {
             "try_catch_divide_by_zero",
             R"(\
 Try:\

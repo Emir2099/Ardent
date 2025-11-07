@@ -324,6 +324,31 @@ std::vector<Token> Lexer::tokenize() {
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         }
+        else if (input.substr(currentPos, 8) == "Inscribe") {
+            tokens.push_back(Token(TokenType::INSCRIBE, "Inscribe"));
+            currentPos += 8;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 4) == "Etch") {
+            tokens.push_back(Token(TokenType::ETCH, "Etch"));
+            currentPos += 4;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 12) == "reading from") {
+            tokens.push_back(Token(TokenType::READING_FROM, "reading from"));
+            currentPos += 12;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 19) == "Banish the scroll") {
+            tokens.push_back(Token(TokenType::BANISH, "Banish the scroll"));
+            currentPos += 19;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 6) == "Banish") {
+            tokens.push_back(Token(TokenType::BANISH, "Banish"));
+            currentPos += 6;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
         else if (input.substr(currentPos, 19) == "From the scroll of") {
             tokens.push_back(Token(TokenType::FROM_SCROLL, "From the scroll of"));
             currentPos += 19;

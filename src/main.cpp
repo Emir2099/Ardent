@@ -198,6 +198,7 @@ int main(int argc, char** argv) {
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
+    bool chroniclesOnly = false; // run only the Chronicle Rites demo
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--oracle" || arg == "-o") wantOracle = true;
@@ -206,13 +207,38 @@ int main(int argc, char** argv) {
         else if (arg == "--emoji") emoji = true;
         else if (arg == "--no-emoji") emoji = false;
         else if (arg == "--poetic") poetic = true;
+        else if (arg == "--chronicles-demo") chroniclesOnly = true;
     }
     if (wantOracle) {
         startOracleMode(colorize, emoji, poetic);
         return 0;
     }
-    // Scroll mode: ardent <path>
-    if (argc > 1) {
+
+    if (chroniclesOnly) {
+        // Minimal, focused Chronicle Rites program
+        const std::string chronicles = R"ARDENT(
+        Let it be proclaimed: "--- Chronicle Rites Demo ---"
+        Inscribe upon "epic.txt" the words "In the beginning, there was code."
+        Let it be proclaimed: "Written epic.txt"
+
+        Let it be known throughout the land, a phrase named lines is of reading from "epic.txt".
+        Let it be proclaimed: lines
+
+        Etch upon "epic.txt" the words "\nAnd thus Ardent was born."
+        Let it be proclaimed: "Appended new verse."
+
+        Let it be known throughout the land, a truth named exists is of Invoke the spirit of chronicles.exists upon "epic.txt".
+        Let it be proclaimed: exists
+
+        Banish the scroll "epic.txt".
+        Let it be proclaimed: "Scroll destroyed."
+        )ARDENT";
+        runArdentProgram(chronicles);
+        return 0;
+    }
+
+    // Scroll mode: ardent <path> (only when first non-flag argument is a path)
+    if (argc > 1 && argv[1][0] != '-') {
         std::string path = argv[1];
         std::ifstream file(path);
         if (!file.is_open()) {
@@ -400,6 +426,27 @@ int main(int argc, char** argv) {
     Let it be proclaimed: "Inner: " + omen
     Catch the curse as outer:
     Let it be proclaimed: "Outer: " + outer
+    )ARDENT";
+    
+
+    // Chronicle Rites demo (non-destructive append)
+    input += R"ARDENT(
+
+    Let it be proclaimed: "--- Chronicle Rites Demo ---"
+    Inscribe upon "epic.txt" the words "In the beginning, there was code."
+    Let it be proclaimed: "Written epic.txt"
+
+    Let it be known throughout the land, a phrase named lines is of reading from "epic.txt".
+    Let it be proclaimed: lines
+
+    Etch upon "epic.txt" the words "\nAnd thus Ardent was born."
+    Let it be proclaimed: "Appended new verse."
+
+    Let it be known throughout the land, a truth named exists is of Invoke the spirit of chronicles.exists upon "epic.txt".
+    Let it be proclaimed: exists
+
+    Banish the scroll "epic.txt".
+    Let it be proclaimed: "Scroll destroyed."
     )ARDENT";
     
 
