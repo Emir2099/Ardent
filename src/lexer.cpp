@@ -172,6 +172,9 @@ Token Lexer::parseIdentifier() {
     }
 
     if (identifier == "Should") return Token(TokenType::SHOULD, identifier);
+    if (identifier == "Try") return Token(TokenType::TRY, identifier);
+    if (identifier == "Catch") return Token(TokenType::CATCH, identifier);
+    if (identifier == "Finally") return Token(TokenType::FINALLY, identifier);
     if (identifier == "fates") return Token(TokenType::FATES, identifier);
     if (identifier == "decree") return Token(TokenType::DECREE, identifier);
     if (identifier == "surpasseth") return Token(TokenType::SURPASSETH, identifier);

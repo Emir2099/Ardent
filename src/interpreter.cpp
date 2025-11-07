@@ -10,11 +10,19 @@
 #include <algorithm>
 #include <fstream>
 #include <filesystem>
+#include <exception>
 // Shared caches/guards for module system across nested interpreters
 static std::unordered_map<std::string, Interpreter::Module> g_moduleCache;
 static std::unordered_map<std::string, bool> g_importing;
 
 // Helpers for pretty-printing values in narrative style
+// Exception type for Ardent curses
+class ArdentError : public std::exception {
+    std::string msg;
+public:
+    explicit ArdentError(std::string m) : msg(std::move(m)) {}
+    const char* what() const noexcept override { return msg.c_str(); }
+};
 static std::string escapeString(const std::string &s) {
     std::string out;
     out.reserve(s.size());
@@ -71,8 +79,7 @@ Interpreter::Interpreter() {
     // Register built-in native functions
     registerNative("math.add", [this](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) {
-            std::cerr << "The spirits demand 2 offerings for 'math.add', yet " << args.size() << " were placed." << std::endl;
-            return 0;
+            throw ArdentError("The spirits demand 2 offerings for 'math.add', yet " + std::to_string(args.size()) + " were placed.");
         }
         auto toNum = [&](const Value &v) -> int {
             if (std::holds_alternative<int>(v)) return std::get<int>(v);
@@ -84,8 +91,7 @@ Interpreter::Interpreter() {
     });
     registerNative("system.len", [this](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) {
-            std::cerr << "The spirits demand 1 offering for 'system.len', yet " << args.size() << " were placed." << std::endl;
-            return 0;
+            throw ArdentError("The spirits demand 1 offering for 'system.len', yet " + std::to_string(args.size()) + " were placed.");
         }
         const Value &v = args[0];
         if (std::holds_alternative<std::string>(v)) return static_cast<int>(std::get<std::string>(v).size());
@@ -93,6 +99,21 @@ Interpreter::Interpreter() {
         if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return static_cast<int>(std::get<std::unordered_map<std::string, SimpleValue>>(v).size());
         // numbers/bools -> length not meaningful; return 0
         return 0;
+    });
+    registerNative("math.divide", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) {
+            throw ArdentError("The spirits demand 2 offerings for 'math.divide', yet " + std::to_string(args.size()) + " were placed.");
+        }
+        auto toNum = [&](const Value &v) -> int {
+            if (std::holds_alternative<int>(v)) return std::get<int>(v);
+            if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
+            if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+            return 0;
+        };
+        int a = toNum(args[0]);
+        int b = toNum(args[1]);
+        if (b == 0) throw ArdentError("A curse was cast: Division by zero in spirit 'math.divide'.");
+        return a / b;
     });
 }
 
@@ -262,17 +283,17 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
     if (auto native = std::dynamic_pointer_cast<NativeInvocation>(expr)) {
         auto it = nativeRegistry.find(native->funcName);
         if (it == nativeRegistry.end()) {
-            std::cerr << "The spirits know not the rite '" << native->funcName << "'." << std::endl;
-            return 0;
+            throw ArdentError(std::string("The spirits know not the rite '") + native->funcName + "'.");
         }
         std::vector<Value> argv;
         argv.reserve(native->args.size());
         for (auto &a : native->args) argv.push_back(evaluateValue(a));
         try {
             return it->second(argv);
+        } catch (const ArdentError&) {
+            throw; // propagate
         } catch (...) {
-            std::cerr << "A rift silences the spirits during '" << native->funcName << "'." << std::endl;
-            return 0;
+            throw ArdentError(std::string("A rift silences the spirits during '") + native->funcName + "'.");
         }
     }
     if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
@@ -507,7 +528,17 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     // Execute a block of statements.
     if (auto block = std::dynamic_pointer_cast<BlockStatement>(ast)) {
         for (auto& stmt : block->statements) {
-            execute(stmt);
+            if (inTryContext) {
+                // Within a try/catch context: let curses bubble to the enclosing handler
+                execute(stmt);
+            } else {
+                try {
+                    execute(stmt);
+                } catch (const ArdentError& e) {
+                    // Top-level: narrate unhandled curse
+                    std::cerr << e.what() << std::endl;
+                }
+            }
         }
     }
     // Evaluate a simple expression.
@@ -555,6 +586,39 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     }
     else if (auto doWhileStmt = std::dynamic_pointer_cast<DoWhileLoop>(ast)) {
         executeDoWhileLoop(doWhileStmt);
+    }
+    else if (auto tc = std::dynamic_pointer_cast<TryCatch>(ast)) {
+        bool hadCurse = false;
+        std::string curseMsg;
+        try {
+            bool prev = inTryContext;
+            inTryContext = true;
+            execute(tc->tryBlock);
+            inTryContext = prev;
+        } catch (const ArdentError& e) {
+            hadCurse = true;
+            curseMsg = e.what();
+        }
+        if (hadCurse && tc->catchBlock) {
+            enterScope();
+            if (!tc->catchVar.empty()) {
+                declareVariable(tc->catchVar, Value(curseMsg));
+            }
+            bool prev = inTryContext;
+            inTryContext = true;
+            execute(tc->catchBlock);
+            inTryContext = prev;
+            exitScope();
+        } else if (hadCurse && !tc->catchBlock) {
+            // rethrow if not handled here
+            throw ArdentError(curseMsg);
+        }
+        if (tc->finallyBlock) {
+            bool prev = inTryContext;
+            inTryContext = true;
+            execute(tc->finallyBlock);
+            inTryContext = prev;
+        }
     }
     else if (auto rite = std::dynamic_pointer_cast<CollectionRite>(ast)) {
         // Clone-modify-reassign pattern with scoped lookup
@@ -697,25 +761,8 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
     }
     else if (auto native = std::dynamic_pointer_cast<NativeInvocation>(ast)) {
-        auto it = nativeRegistry.find(native->funcName);
-        if (it == nativeRegistry.end()) {
-            std::cerr << "The spirits know not the rite '" << native->funcName << "'." << std::endl;
-            return;
-        }
-        std::vector<Value> argv;
-        argv.reserve(native->args.size());
-        for (auto &a : native->args) argv.push_back(evaluateValue(a));
-        Value ret;
-        try { ret = it->second(argv); }
-        catch (...) {
-            std::cerr << "A rift silences the spirits during '" << native->funcName << "'." << std::endl;
-            return;
-        }
-        // Print return if simple
-        if (std::holds_alternative<std::string>(ret)) std::cout << std::get<std::string>(ret) << std::endl;
-        else if (std::holds_alternative<int>(ret)) std::cout << std::get<int>(ret) << std::endl;
-        else if (std::holds_alternative<bool>(ret)) std::cout << (std::get<bool>(ret) ? "True" : "False") << std::endl;
-        else std::cout << formatValue(ret) << std::endl;
+        // Evaluate for side effects or exceptions; do not print automatically
+        (void)evaluateValue(native);
     }
     
 

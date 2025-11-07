@@ -157,6 +157,67 @@ int main() {
     }
     std::vector<TestCase> tests = {
         {
+            "try_catch_divide_by_zero",
+            R"(\
+Try:\
+Invoke the spirit of math.divide upon 10, 0\
+Catch the curse as omen:\
+Let it be proclaimed: "Error was " + omen\
+)",
+            "Error was A curse was cast: Division by zero in spirit 'math.divide'."
+        },
+        {
+            "try_no_error_path",
+            R"(\
+Try:\
+Invoke the spirit of math.add upon 2, 3\
+Catch the curse as omen:\
+Let it be proclaimed: "Should not happen"\
+Finally:\
+Let it be proclaimed: "All is well."\
+)",
+            "All is well."
+        },
+        {
+            "try_catch_finally_order",
+            R"(\
+Try:\
+Invoke the spirit of math.divide upon 10, 0\
+Catch the curse as omen:\
+Let it be proclaimed: omen\
+Finally:\
+Let it be proclaimed: "The rite is ended."\
+)",
+            "A curse was cast: Division by zero in spirit 'math.divide'.\nThe rite is ended."
+        },
+        {
+            "nested_try_inner_handles",
+            R"(\
+Try:\
+Try:\
+Invoke the spirit of math.divide upon 1, 0\
+Catch the curse as omen:\
+Let it be proclaimed: "Inner: " + omen\
+Catch the curse as outer:\
+Let it be proclaimed: "Outer: " + outer\
+)",
+            "Inner: A curse was cast: Division by zero in spirit 'math.divide'."
+        },
+        {
+            "missing_catch_bubbles",
+            R"(\
+Try:\
+Invoke the spirit of math.divide upon 1, 0\
+Finally:\
+Let it be proclaimed: "After"\
+)",
+            "After",
+            false,
+            "",
+            true,
+            "A curse was cast: Division by zero in spirit 'math.divide'."
+        },
+        {
             "native_add_print",
             R"(\
 Let it be proclaimed: Invoke the spirit of math.add upon 2, 3\

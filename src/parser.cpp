@@ -677,6 +677,8 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseSpellInvocation();
     } else if (match(TokenType::NATIVE_CALL)) {
         return parseNativeInvocation();
+    } else if (match(TokenType::TRY)) {
+        return parseTryCatch();
     } else if (match(TokenType::FROM_SCROLL)) {
         return parseImportStatement();
     } else if (match(TokenType::UNFURL_SCROLL)) {
@@ -795,6 +797,10 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
         if (!isAtEnd() && peek().type == TokenType::DOT) advance();
         return std::make_shared<UnfurlInclude>(pathTok.value);
+    } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Try") {
+        // Fallback wordy Try
+        advance();
+        return parseTryCatch();
     } else if (peek().type == TokenType::STRING ||
                peek().type == TokenType::NUMBER ||
                peek().type == TokenType::IDENTIFIER) {
@@ -1011,6 +1017,59 @@ std::shared_ptr<ASTNode> Parser::parseImportStatement() {
     }
     std::cerr << "Error: Expected 'draw all knowledge' or 'take' after scroll path" << std::endl;
     return nullptr;
+}
+
+// Try: block; optional Catch the curse as <id>: block; optional Finally: block
+std::shared_ptr<ASTNode> Parser::parseTryCatch() {
+    // Optional ':' after Try
+    if (peek().type == TokenType::COLON) advance();
+    auto parseBlockUntil = [&](const std::vector<TokenType>& stops) -> std::shared_ptr<BlockStatement> {
+        std::vector<std::shared_ptr<ASTNode>> statements;
+        while (!isAtEnd()) {
+            TokenType t = peek().type;
+            bool stop = false;
+            for (auto s : stops) { if (t == s) { stop = true; break; } }
+            if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::NATIVE_CALL || t == TokenType::FROM_SCROLL || t == TokenType::UNFURL_SCROLL) {
+                // Do not swallow other top-level constructs unless part of block explicitly
+            }
+            if (stop) break;
+            // Stop as well if identifier tokens announce Catch/Finally in wordy form
+            if (t == TokenType::IDENTIFIER && (peek().value == "Catch" || peek().value == "Finally")) break;
+            auto stmt = parseStatement();
+            if (!stmt) { std::cerr << "Error: Failed to parse statement within try/catch block" << std::endl; return nullptr; }
+            statements.push_back(stmt);
+        }
+        return std::make_shared<BlockStatement>(statements);
+    };
+
+    auto tryBlock = parseBlockUntil({TokenType::CATCH, TokenType::FINALLY});
+    if (!tryBlock) return nullptr;
+
+    std::string catchVar;
+    std::shared_ptr<BlockStatement> catchBlock = nullptr;
+    if (match(TokenType::CATCH) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Catch" && (advance(), true))) {
+        // Accept optional 'the curse as <id>'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "curse" || peek().value == "curses")) advance();
+        if (!isAtEnd() && ((peek().type == TokenType::IDENTIFIER && peek().value == "as") || peek().type == TokenType::AS)) {
+            advance();
+            Token varTok = consume(TokenType::IDENTIFIER, "Expected catch variable after 'as'");
+            if (varTok.type == TokenType::INVALID) return nullptr;
+            catchVar = varTok.value;
+        }
+    if (peek().type == TokenType::COLON) advance();
+    // Stop the catch block when encountering either a new 'Catch' (outer) or 'Finally'
+    catchBlock = parseBlockUntil({TokenType::FINALLY, TokenType::CATCH});
+        if (!catchBlock) return nullptr;
+    }
+
+    std::shared_ptr<BlockStatement> finallyBlock = nullptr;
+    if (match(TokenType::FINALLY) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Finally" && (advance(), true))) {
+        if (peek().type == TokenType::COLON) advance();
+        finallyBlock = parseBlockUntil({});
+        if (!finallyBlock) return nullptr;
+    }
+    return std::make_shared<TryCatch>(tryBlock, catchVar, catchBlock, finallyBlock);
 }
 
 // Unfurl the scroll "path".

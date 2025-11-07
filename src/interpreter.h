@@ -30,6 +30,7 @@ private:
     std::unordered_map<std::string, SpellDef> spells;
     struct ReturnSignal { Value value; };
     bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
+    bool inTryContext = false; // when true, allow curses to bubble to enclosing try/catch
     // Import support
     std::unordered_map<std::string, Module> moduleCache;
     std::unordered_map<std::string, bool> importing;

@@ -177,6 +177,20 @@ public:
     explicit UnfurlInclude(std::string path) : path(std::move(path)) {}
 };
 
+// Try/Catch/Finally construct
+class TryCatch : public ASTNode {
+public:
+    std::shared_ptr<BlockStatement> tryBlock;
+    std::string catchVar; // empty if none
+    std::shared_ptr<BlockStatement> catchBlock; // nullptr if none
+    std::shared_ptr<BlockStatement> finallyBlock; // nullptr if none
+    TryCatch(std::shared_ptr<BlockStatement> t,
+             std::string cv,
+             std::shared_ptr<BlockStatement> c,
+             std::shared_ptr<BlockStatement> f)
+        : tryBlock(std::move(t)), catchVar(std::move(cv)), catchBlock(std::move(c)), finallyBlock(std::move(f)) {}
+};
+
 struct ForLoop : public ASTNode {
     std::shared_ptr<ASTNode> init;
     std::shared_ptr<ASTNode> condition;

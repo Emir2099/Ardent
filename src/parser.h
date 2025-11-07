@@ -40,6 +40,7 @@ private:
     std::shared_ptr<ASTNode> parseDoWhileLoop();
     std::shared_ptr<ASTNode> parseImportStatement();
     std::shared_ptr<ASTNode> parseUnfurl();
+    std::shared_ptr<ASTNode> parseTryCatch();
     
 public:
     Parser(std::vector<Token> tokens);

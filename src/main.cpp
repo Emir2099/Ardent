@@ -158,6 +158,32 @@ int main() {
     Let it be proclaimed: "Len of 'abc' is " + Invoke the spirit of system.len upon "abc"
     )ARDENT";
     
+    // Exception Rites demo (non-destructive append)
+    input += R"ARDENT(
+
+    Let it be proclaimed: "--- Exception Rites Demo ---"
+    Try:
+    Invoke the spirit of math.divide upon 10, 0
+    Catch the curse as omen:
+    Let it be proclaimed: "Caught: " + omen
+
+    Try:
+    Invoke the spirit of math.add upon 2, 3
+    Catch the curse as omen:
+    Let it be proclaimed: "Should not happen"
+    Finally:
+    Let it be proclaimed: "All is well."
+
+    Let it be proclaimed: "--- Nested Try Demo ---"
+    Try:
+    Try:
+    Invoke the spirit of math.divide upon 1, 0
+    Catch the curse as omen:
+    Let it be proclaimed: "Inner: " + omen
+    Catch the curse as outer:
+    Let it be proclaimed: "Outer: " + outer
+    )ARDENT";
+    
 
     Lexer lexer(input);
     std::vector<Token> tokens = lexer.tokenize();
