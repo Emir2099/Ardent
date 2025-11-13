@@ -1,6 +1,7 @@
 #include <iostream>
 #include "lexer.h"
 #include "parser.h"
+#include "arena.h"
 #include "interpreter.h"
 #include <memory>
 #include <vector>
@@ -19,7 +20,8 @@
 static void runArdentProgram(const std::string& code) {
     Lexer lexer(code);
     auto tokens = lexer.tokenize();
-    Parser parser(tokens);
+    Arena astArena; // arena for this one-shot program parse
+    Parser parser(tokens, &astArena);
     auto ast = parser.parse();
     if (!ast) {
         std::cerr << "Error: Parser returned NULL AST!" << std::endl;
@@ -109,9 +111,13 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
         }
         if (line.empty()) continue;
         try {
+            // Begin REPL line: enable ephemeral line arena inside the interpreter
+            interpreter.beginLine();
             Lexer lx(line);
             auto toks = lx.tokenize();
-            Parser p(std::move(toks));
+            // Parser uses its own ephemeral arena for AST nodes
+            Arena lineAstArena; // ephemeral arena per REPL line (AST only)
+            Parser p(std::move(toks), &lineAstArena);
             auto ast = p.parse();
             if (ast) {
                 // Detect if last statement is an explicit proclamation to avoid double printing
@@ -185,7 +191,11 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
                     }
                 }
             }
+            // End REPL line: promote persistent values and reset line arena
+            interpreter.endLine();
         } catch (const std::exception& e) {
+            // Ensure we end the line even if an exception occurred
+            interpreter.endLine();
             if (colorize) std::cerr << "\x1b[90;3m" << e.what() << "\x1b[0m" << std::endl;
             else std::cerr << e.what() << std::endl;
         }
@@ -458,7 +468,8 @@ int main(int argc, char** argv) {
         for (const auto& token : tokens) {
             std::cout << "Token: " << token.value << ", Type: " << tokenTypeToString(token.type) << std::endl;
         }
-        Parser parser(tokens);
+    Arena astArena2; // arena for demo program
+    Parser parser(tokens, &astArena2);
         auto ast = parser.parse();
         if (!ast) {
             std::cerr << "Error: Parser returned NULL AST!" << std::endl;

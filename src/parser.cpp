@@ -7,7 +7,9 @@
 #include <sstream>
 
 // Constructor
-Parser::Parser(std::vector<Token> tokens) : tokens(tokens), current(0) {}
+Parser::Parser(std::vector<Token> tokens) : tokens(tokens), current(0), arena(nullptr) {}
+
+Parser::Parser(std::vector<Token> tokens, Arena* a) : tokens(std::move(tokens)), current(0), arena(a) {}
 
 // Returns the current token without consuming it.
 Token Parser::peek() {
@@ -57,7 +59,7 @@ std::shared_ptr<ASTNode> Parser::parseOr() {
     while (!isAtEnd() && peek().type == TokenType::OR) {
         Token op = advance();
         auto right = parseAnd();
-        left = std::make_shared<BinaryExpression>(left, op, right);
+    left = node<BinaryExpression>(left, op, right);
     }
     return left;
 }
@@ -67,7 +69,7 @@ std::shared_ptr<ASTNode> Parser::parseAnd() {
     while (!isAtEnd() && peek().type == TokenType::AND) {
         Token op = advance();
         auto right = parseComparison();
-        left = std::make_shared<BinaryExpression>(left, op, right);
+    left = node<BinaryExpression>(left, op, right);
     }
     return left;
 }
@@ -76,7 +78,7 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
     if (!isAtEnd() && peek().type == TokenType::NOT) {
         Token op = advance();
         auto operand = parseUnary();
-        return std::make_shared<UnaryExpression>(op, operand);
+    return node<UnaryExpression>(op, operand);
     }
     // Support unary minus by rewriting to (0 - <operand>)
     if (!isAtEnd() && peek().type == TokenType::OPERATOR && peek().value == "-") {
@@ -84,8 +86,8 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
         auto operand = parseUnary();
         // Build left literal 0
         Token zeroTok(TokenType::NUMBER, "0");
-        auto leftZero = std::make_shared<Expression>(zeroTok);
-        return std::make_shared<BinaryExpression>(leftZero, Token(TokenType::OPERATOR, "-"), operand);
+    auto leftZero = node<Expression>(zeroTok);
+    return node<BinaryExpression>(leftZero, Token(TokenType::OPERATOR, "-"), operand);
     }
     if (!isAtEnd() && (peek().type == TokenType::CAST || (peek().type == TokenType::IDENTIFIER && peek().value == "cast"))) {
         return parseCast();
@@ -103,7 +105,7 @@ std::shared_ptr<ASTNode> Parser::parseComparison() {
             t == TokenType::GREATER || t == TokenType::LESSER) {
             Token op = advance();
             auto right = parseUnary();
-            left = std::make_shared<BinaryExpression>(left, op, right);
+            left = node<BinaryExpression>(left, op, right);
         } else if (t == TokenType::IDENTIFIER && peek().value == "is") {
             // Attempt to parse literary comparisons from identifier sequence
             size_t save = current;
@@ -133,7 +135,7 @@ std::shared_ptr<ASTNode> Parser::parseComparison() {
             }
             if (op.type != TokenType::INVALID) {
                 auto right = parseUnary();
-                left = std::make_shared<BinaryExpression>(left, op, right);
+                left = node<BinaryExpression>(left, op, right);
             } else {
                 // revert and stop if no comparison phrase recognized
                 current = save;
@@ -171,12 +173,12 @@ std::shared_ptr<ASTNode> Parser::parseCast() {
         std::cerr << "Error: Unknown cast target type '" << typeTok.value << "'" << std::endl;
         return nullptr;
     }
-    return std::make_shared<CastExpression>(operand, target);
+    return node<CastExpression>(operand, target);
 }
 
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
-    std::shared_ptr<ASTNode> node;
+    std::shared_ptr<ASTNode> cur;
     // Special Chronicle existence pattern: the scroll "path" existeth
     if (token.type == TokenType::IDENTIFIER && token.value == "the") {
         size_t save = current;
@@ -187,26 +189,26 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
         Token pathTok = ok ? advance() : Token(TokenType::INVALID, "");
         if (!( !isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "existeth" || peek().value == "exist"))) ok = false; else advance();
         if (ok) {
-            std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
-            return std::make_shared<NativeInvocation>("chronicles.exists", args);
+            std::vector<std::shared_ptr<ASTNode>> args; args.push_back(node<Expression>(pathTok));
+            return node<NativeInvocation>("chronicles.exists", args);
         }
         current = save; // restore if not matched
     }
     if (token.type == TokenType::LBRACKET) {
-        node = parseArrayLiteral();
+    cur = parseArrayLiteral();
     } else if (token.type == TokenType::LBRACE) {
-        node = parseObjectLiteral();
+    cur = parseObjectLiteral();
     } else if (token.type == TokenType::SPELL_CALL) {
         // Support 'Invoke the spell ...' as an expression
         advance();
-        node = parseSpellInvocation();
+    cur = parseSpellInvocation();
     } else if (token.type == TokenType::NATIVE_CALL) {
         // Support 'Invoke the spirit ...' as an expression
         advance();
-        node = parseNativeInvocation();
+    cur = parseNativeInvocation();
     } else if (token.type == TokenType::STRING || token.type == TokenType::NUMBER || token.type == TokenType::IDENTIFIER || token.type == TokenType::BOOLEAN) {
         token = advance();  // Consume the token once
-        node = std::make_shared<Expression>(token);
+        cur = node<Expression>(token);
     } else {
         std::cerr << "Unexpected token: " << token.value << std::endl;
         return nullptr;
@@ -220,17 +222,17 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
                 std::cerr << "Error: Expected ']' in index expression at position " << current << std::endl;
                 return nullptr;
             }
-            node = std::make_shared<IndexExpression>(node, indexExpr);
+            cur = node<IndexExpression>(cur, indexExpr);
         } else if (peek().type == TokenType::DOT) {
             advance(); // consume '.'
             Token keyTok = consume(TokenType::IDENTIFIER, "Expected identifier after '.' for tome field");
             if (keyTok.type == TokenType::INVALID) return nullptr;
             // Build a STRING literal expression for the key
-            auto keyExpr = std::make_shared<Expression>(Token(TokenType::STRING, keyTok.value));
-            node = std::make_shared<IndexExpression>(node, keyExpr);
+            auto keyExpr = node<Expression>(Token(TokenType::STRING, keyTok.value));
+            cur = node<IndexExpression>(cur, keyExpr);
         }
     }
-    return node;
+    return cur;
 }
 
 std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std::shared_ptr<ASTNode> left) {
@@ -239,8 +241,8 @@ std::shared_ptr<ASTNode> Parser::parseOperatorExpression(int minPrecedence, std:
         if (opToken.type != TokenType::OPERATOR) break;
         advance();
         // Allow full unary expressions on the right (supports cast, not, literals, identifiers)
-        auto right = parseUnary();
-        left = std::make_shared<BinaryExpression>(left, opToken, right);
+    auto right = parseUnary();
+    left = node<BinaryExpression>(left, opToken, right);
     }
     return left;
 }
@@ -265,7 +267,7 @@ std::shared_ptr<ASTNode> Parser::parseArrayLiteral() {
         std::cerr << "Error: Expected ']' to close array literal at position " << current << std::endl;
         return nullptr;
     }
-    return std::make_shared<ArrayLiteral>(elements);
+    return node<ArrayLiteral>(elements);
 }
 
 // {"key": expr, ...}
@@ -294,7 +296,7 @@ std::shared_ptr<ASTNode> Parser::parseObjectLiteral() {
         std::cerr << "Error: Expected '}' to close tome literal at position " << current << std::endl;
         return nullptr;
     }
-    return std::make_shared<ObjectLiteral>(entries);
+    return node<ObjectLiteral>(entries);
 }
 
 /* Parse a simple condition in the form:
@@ -333,10 +335,10 @@ std::shared_ptr<ASTNode> Parser::parseSimpleCondition() {
         right = consume(TokenType::NUMBER, "Expected numeric value in condition");
     }
 
-    return std::make_shared<BinaryExpression>(
-        std::make_shared<Expression>(left),
+    return node<BinaryExpression>(
+        node<Expression>(left),
         op,
-        std::make_shared<Expression>(right)
+        node<Expression>(right)
     );
 }
 // Parse an if-statement.
@@ -364,7 +366,7 @@ std::shared_ptr<ASTNode> Parser::parseIfStatement() {
     std::shared_ptr<ASTNode> thenBranch;
     if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
-        thenBranch = std::make_shared<PrintStatement>(expr);
+    thenBranch = node<PrintStatement>(expr);
     } else {
         thenBranch = parseExpression();
     }
@@ -372,12 +374,12 @@ std::shared_ptr<ASTNode> Parser::parseIfStatement() {
     if (match(TokenType::ELSE)) {
         if (match(TokenType::WHISPER)) {
             auto expr = parseExpression();
-            elseBranch = std::make_shared<PrintStatement>(expr);
+            elseBranch = node<PrintStatement>(expr);
         } else {
             elseBranch = parseExpression();
         }
     }
-    return std::make_shared<IfStatement>(condition, thenBranch, elseBranch);
+    return node<IfStatement>(condition, thenBranch, elseBranch);
 }
 
 // Stub for function calls.
@@ -416,24 +418,24 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     bool simpleLiteral = false;
     Token value(TokenType::INVALID, "");
     if (match(TokenType::READING_FROM) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "reading" && (advance(), !isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "from" && (advance(), true)))) {
-        Token pathTok = consume(TokenType::STRING, "Expected path after 'reading from'");
-        std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
-        rhsNode = std::make_shared<NativeInvocation>("chronicles.read", args);
+    Token pathTok = consume(TokenType::STRING, "Expected path after 'reading from'");
+    std::vector<std::shared_ptr<ASTNode>> args; args.push_back(node<Expression>(pathTok));
+    rhsNode = node<NativeInvocation>("chronicles.read", args);
     }
     else if (peek().type == TokenType::STRING) {
         value = advance(); simpleLiteral = true;
-        rhsNode = std::make_shared<Expression>(value);
+    rhsNode = node<Expression>(value);
     } else if (peek().type == TokenType::BOOLEAN) {
         value = advance(); simpleLiteral = true;
-        rhsNode = std::make_shared<Expression>(value);
+    rhsNode = node<Expression>(value);
     } else if (peek().type == TokenType::OPERATOR && peek().value == "-") {
         advance();
         Token numTok = consume(TokenType::NUMBER, "Expected number after '-'");
-        value = Token(TokenType::NUMBER, "-" + numTok.value); simpleLiteral = true;
-        rhsNode = std::make_shared<Expression>(value);
+    value = Token(TokenType::NUMBER, "-" + numTok.value); simpleLiteral = true;
+    rhsNode = node<Expression>(value);
     } else if (peek().type == TokenType::NUMBER) {
-        value = advance(); simpleLiteral = true;
-        rhsNode = std::make_shared<Expression>(value);
+    value = advance(); simpleLiteral = true;
+    rhsNode = node<Expression>(value);
     } else {
         rhsNode = parseExpression();
         if (!rhsNode) {
@@ -472,8 +474,8 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
             return nullptr;
         }
     }
-    return std::make_shared<BinaryExpression>(
-        std::make_shared<Expression>(varName),
+    return node<BinaryExpression>(
+        node<Expression>(varName),
         Token(TokenType::IS_OF, "is of"),
         rhsNode
     );
@@ -505,7 +507,7 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
         }
         auto expr = parseExpression();
         if (expr) {
-            body.push_back(std::make_shared<PrintStatement>(expr));
+            body.push_back(node<PrintStatement>(expr));
         } else {
             // Standardize error so tests can assert on unsupported while body patterns
             std::cerr << "Error: Unexpected token or missing block while parsing while loop body" << std::endl;
@@ -523,10 +525,10 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
     Token stepDirToken = advance(); // ASCEND or DESCEND
     Token stepValue = consume(TokenType::NUMBER, "Expected step value");
 
-    return std::make_shared<WhileLoop>(
-        std::make_shared<Expression>(loopVarToken),
-        std::make_shared<Expression>(limit),
-        std::make_shared<Expression>(stepValue),
+    return node<WhileLoop>(
+        node<Expression>(loopVarToken),
+        node<Expression>(limit),
+        node<Expression>(stepValue),
         opToken.type, // Pass SURPASSETH/REMAINETH
         stepDirToken.type,
         body
@@ -538,7 +540,7 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
 std::shared_ptr<ASTNode> Parser::parseForLoop() {
     // After matching "For", parse the loop variable.
     Token loopVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable after 'For'");
-    auto loopVar = std::make_shared<Expression>(loopVarToken);
+    auto loopVar = node<Expression>(loopVarToken);
 // Expect either "surpasseth" or "remaineth below" 🛠️
 Token comparisonOpToken = advance();
 if (comparisonOpToken.type != TokenType::SURPASSETH && 
@@ -550,7 +552,7 @@ if (comparisonOpToken.type != TokenType::SURPASSETH &&
     auto limit = parseExpression();
 
     // Create condition: <loopVar> remaineth <limit>
-    auto condition = std::make_shared<BinaryExpression>(loopVar, comparisonOpToken, limit);
+    auto condition = node<BinaryExpression>(loopVar, comparisonOpToken, limit);
 
     // Parse the loop body:
     // Expect the token: "so shall these words be spoken"
@@ -568,7 +570,7 @@ if (comparisonOpToken.type != TokenType::SURPASSETH &&
         auto expr = parseExpression();
         if (expr) {
             // Wrap each expression in a PrintStatement
-            body.push_back(std::make_shared<PrintStatement>(expr));
+            body.push_back(node<PrintStatement>(expr));
         } else {
             std::cerr << "Error: Failed to parse expression in for loop body" << std::endl;
             break;
@@ -596,8 +598,8 @@ if (comparisonOpToken.type != TokenType::SURPASSETH &&
     }
     auto step = parseExpression();
 
-    return std::make_shared<ForLoop>(
-        loopVar, condition, step, stepDir, std::make_shared<BlockStatement>(body)
+    return node<ForLoop>(
+        loopVar, condition, step, stepDir, node<BlockStatement>(body)
     );
 }
 
@@ -618,7 +620,7 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
     if (auto block = std::dynamic_pointer_cast<BlockStatement>(bodyStmt)) {
         bodyBlock = block;
     } else {
-        bodyBlock = std::make_shared<BlockStatement>(std::vector<std::shared_ptr<ASTNode>>{ bodyStmt });
+    bodyBlock = node<BlockStatement>(std::vector<std::shared_ptr<ASTNode>>{ bodyStmt });
     }
     TokenType stepDir = TokenType::ASCEND; // Default to ASCEND
 
@@ -639,7 +641,7 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
         }
         // Consume the loop variable from the update clause.
         Token incVarToken = consume(TokenType::IDENTIFIER, "Expected loop variable in update clause");
-        updateLoopVar = std::make_shared<Expression>(incVarToken);
+    updateLoopVar = node<Expression>(incVarToken);
         // Expect the 'ascend' or 'descend' token.
         Token stepToken = advance(); // Consumes either ASCEND or DESCEND
         stepDir = stepToken.type;
@@ -684,7 +686,7 @@ std::shared_ptr<ASTNode> Parser::parseDoWhileLoop() {
     // Use the loop variable from the condition.
     std::shared_ptr<Expression> loopVarExpr = conditionLoopVarExpr;
     
-    return std::make_shared<DoWhileLoop>(bodyBlock, conditionExpr, updateExpr, loopVarExpr, stepDir);
+    return node<DoWhileLoop>(bodyBlock, conditionExpr, updateExpr, loopVarExpr, stepDir);
 }
 
 
@@ -728,21 +730,21 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
                     if (!match(TokenType::IDENTIFIER) || tokens[current-1].value != "with") {
                         std::cerr << "Error: Expected 'with' after expand" << std::endl; return nullptr; }
                     auto elemExpr = parseExpression();
-                    return std::make_shared<CollectionRite>(CollectionRiteType::OrderExpand, varTok.value, nullptr, elemExpr);
+                    return node<CollectionRite>(CollectionRiteType::OrderExpand, varTok.value, nullptr, elemExpr);
                 } else if (verb.type == TokenType::AMEND && isTome) {
                     // amend "key" to <expr>
                     auto keyNode = parseExpression();
                     if (!match(TokenType::IDENTIFIER) || tokens[current-1].value != "to") { std::cerr << "Error: Expected 'to' after amend key" << std::endl; return nullptr; }
                     auto valExpr = parseExpression();
-                    return std::make_shared<CollectionRite>(CollectionRiteType::TomeAmend, varTok.value, keyNode, valExpr);
+                    return node<CollectionRite>(CollectionRiteType::TomeAmend, varTok.value, keyNode, valExpr);
                 } else if (verb.type == TokenType::REMOVE && isOrder) {
                     // remove <expr> (element match by equality)
                     auto elemExpr = parseExpression();
-                    return std::make_shared<CollectionRite>(CollectionRiteType::OrderRemove, varTok.value, elemExpr, nullptr);
+                    return node<CollectionRite>(CollectionRiteType::OrderRemove, varTok.value, elemExpr, nullptr);
                 } else if (verb.type == TokenType::ERASE && isTome) {
                     // erase "key"
                     auto keyNode = parseExpression();
-                    return std::make_shared<CollectionRite>(CollectionRiteType::TomeErase, varTok.value, keyNode, nullptr);
+                    return node<CollectionRite>(CollectionRiteType::TomeErase, varTok.value, keyNode, nullptr);
                 } else {
                     std::cerr << "Error: Rite verb incompatible with collection type" << std::endl; return nullptr;
                 }
@@ -763,7 +765,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         return parseDoWhileLoop();
     } else if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
-        return std::make_shared<PrintStatement>(expr);
+    return node<PrintStatement>(expr);
     } else if (match(TokenType::INSCRIBE)) {
         return parseInscribe(false);
     } else if (match(TokenType::ETCH)) {
@@ -795,7 +797,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
                 alias = aliasTok.value;
             }
             if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-            return std::make_shared<ImportAll>(pathTok.value, alias);
+            return node<ImportAll>(pathTok.value, alias);
         }
         // Else 'take' branch
         bool sawTake = false;
@@ -814,7 +816,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
             break;
         }
         if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-        return std::make_shared<ImportSelective>(pathTok.value, names);
+    return node<ImportSelective>(pathTok.value, names);
     } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Unfurl") {
         // Fallback wordy unfurl: Unfurl the scroll "path".
         advance();
@@ -822,7 +824,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scroll") advance();
         Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
         if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-        return std::make_shared<UnfurlInclude>(pathTok.value);
+    return node<UnfurlInclude>(pathTok.value);
     } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "Try") {
         // Fallback wordy Try
         advance();
@@ -846,7 +848,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
             }
             if (ok) {
                 auto expr = parseExpression();
-                return std::make_shared<PrintStatement>(expr);
+                return node<PrintStatement>(expr);
             } else {
                 current = save; // restore
             }
@@ -862,7 +864,7 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
             }
             return nullptr;
         }
-        return std::make_shared<PrintStatement>(expr);
+    return node<PrintStatement>(expr);
     } else {
         std::cerr << "Error: Unexpected token '" << peek().value << "' at position " << current << std::endl;
         return nullptr;
@@ -886,7 +888,7 @@ std::shared_ptr<ASTNode> Parser::parse() {
         std::cerr << "Error: No valid statements parsed!" << std::endl;
         return nullptr;
     }
-    return std::make_shared<BlockStatement>(statements);
+    return node<BlockStatement>(statements);
 }
 
 // Parse a spell definition:
@@ -930,14 +932,14 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
         if (t == TokenType::RETURN) {
             advance(); // consume RETURN
             auto retExpr = parseExpression();
-            bodyStmts.push_back(std::make_shared<ReturnStatement>(retExpr));
+            bodyStmts.push_back(node<ReturnStatement>(retExpr));
             // After a return, optionally continue to allow trailing statements, but they won't execute after return.
             continue;
         }
         bodyStmts.push_back(parseStatement());
     }
-    auto block = std::make_shared<BlockStatement>(bodyStmts);
-    return std::make_shared<SpellStatement>(spellName.value, params, block);
+    auto block = node<BlockStatement>(bodyStmts);
+    return node<SpellStatement>(spellName.value, params, block);
 }
 
 // Parse invocation: Invoke the spell greet upon "Aragorn".
@@ -968,7 +970,7 @@ std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
         // Optional comma token
         if (peek().type == TokenType::COMMA) advance(); else break;
     }
-    return std::make_shared<SpellInvocation>(fullName, args);
+    return node<SpellInvocation>(fullName, args);
 }
 
 // Parse native invocation: Invoke the spirit [of] name[.qual] upon args
@@ -997,7 +999,7 @@ std::shared_ptr<ASTNode> Parser::parseNativeInvocation() {
         if (expr) args.push_back(expr); else break;
         if (peek().type == TokenType::COMMA) advance(); else break;
     }
-    return std::make_shared<NativeInvocation>(fullName, args);
+    return node<NativeInvocation>(fullName, args);
 }
 
 // From the scroll of "path" draw all knowledge [as alias].
@@ -1022,7 +1024,7 @@ std::shared_ptr<ASTNode> Parser::parseImportStatement() {
         }
         // Optional trailing period
         if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-        return std::make_shared<ImportAll>(pathTok.value, alias);
+    return node<ImportAll>(pathTok.value, alias);
     }
     bool sawTake = false;
     if (match(TokenType::TAKE)) { sawTake = true; }
@@ -1039,7 +1041,7 @@ std::shared_ptr<ASTNode> Parser::parseImportStatement() {
             break;
         }
         if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-        return std::make_shared<ImportSelective>(pathTok.value, names);
+    return node<ImportSelective>(pathTok.value, names);
     }
     std::cerr << "Error: Expected 'draw all knowledge' or 'take' after scroll path" << std::endl;
     return nullptr;
@@ -1065,7 +1067,7 @@ std::shared_ptr<ASTNode> Parser::parseTryCatch() {
             if (!stmt) { std::cerr << "Error: Failed to parse statement within try/catch block" << std::endl; return nullptr; }
             statements.push_back(stmt);
         }
-        return std::make_shared<BlockStatement>(statements);
+    return node<BlockStatement>(statements);
     };
 
     auto tryBlock = parseBlockUntil({TokenType::CATCH, TokenType::FINALLY});
@@ -1095,14 +1097,14 @@ std::shared_ptr<ASTNode> Parser::parseTryCatch() {
         finallyBlock = parseBlockUntil({});
         if (!finallyBlock) return nullptr;
     }
-    return std::make_shared<TryCatch>(tryBlock, catchVar, catchBlock, finallyBlock);
+    return node<TryCatch>(tryBlock, catchVar, catchBlock, finallyBlock);
 }
 
 // Unfurl the scroll "path".
 std::shared_ptr<ASTNode> Parser::parseUnfurl() {
     Token pathTok = consume(TokenType::STRING, "Expected scroll path after 'Unfurl the scroll'");
     if (!isAtEnd() && peek().type == TokenType::DOT) advance();
-    return std::make_shared<UnfurlInclude>(pathTok.value);
+    return node<UnfurlInclude>(pathTok.value);
 }
 
 // Chronicle Rites: Inscribe/Etch upon "path" the words <expr>
@@ -1116,9 +1118,9 @@ std::shared_ptr<ASTNode> Parser::parseInscribe(bool append) {
     auto contentExpr = parseExpression();
     if (!contentExpr) return nullptr;
     std::vector<std::shared_ptr<ASTNode>> args;
-    args.push_back(std::make_shared<Expression>(pathTok));
+    args.push_back(node<Expression>(pathTok));
     args.push_back(contentExpr);
-    return std::make_shared<NativeInvocation>(append ? "chronicles.append" : "chronicles.write", args);
+    return node<NativeInvocation>(append ? "chronicles.append" : "chronicles.write", args);
 }
 
 // Banish the scroll "path".
@@ -1131,6 +1133,6 @@ std::shared_ptr<ASTNode> Parser::parseBanish() {
     if (!isAtEnd() && peek().type == TokenType::DOT) advance();
     // Defensive: if an extra stray string token remains (e.g., lexing quirk), consume it
     if (!isAtEnd() && peek().type == TokenType::STRING) advance();
-    std::vector<std::shared_ptr<ASTNode>> args; args.push_back(std::make_shared<Expression>(pathTok));
-    return std::make_shared<NativeInvocation>("chronicles.delete", args);
+    std::vector<std::shared_ptr<ASTNode>> args; args.push_back(node<Expression>(pathTok));
+    return node<NativeInvocation>("chronicles.delete", args);
 }

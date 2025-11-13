@@ -6,19 +6,44 @@
 #include <vector>
 #include <functional>
 #include "ast.h"
+#include "arena.h"
+#include "env.h"
+#include "phrase.h"
 
 class Interpreter {
 public:
     Interpreter();
-    // Allow integers, strings, and booleans as variable values
+    // Allow integers, strings/phrases, and booleans as variable values
+    // Note: For now, collections still use std::string entries; Phrase is introduced for top-level values first.
     using SimpleValue = std::variant<int, std::string, bool>;
-    using Value = std::variant<int, std::string, bool, std::vector<SimpleValue>, std::unordered_map<std::string, SimpleValue>>;
+    // Arena-backed immutable collection views
+    struct Order { size_t size; const SimpleValue* data; };
+    struct TomeEntry { std::string key; SimpleValue value; };
+    struct Tome { size_t size; const TomeEntry* data; };
+    using Value = std::variant<int, std::string, bool,
+                               std::vector<SimpleValue>, // legacy
+                               std::unordered_map<std::string, SimpleValue>, // legacy
+                               Phrase,
+                               Order,
+                               Tome>;
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
+    // Module: cached variables/spells from imported scroll
     struct Module { std::unordered_map<std::string, Value> variables; std::unordered_map<std::string, SpellDef> spells; };
     using NativeFunc = std::function<Value(const std::vector<Value>&)>;
 private:
     // Nested lexical scopes: scopes[0] = global, scopes.back() = current
     std::vector<std::unordered_map<std::string, Value>> scopes;
+    // Dual-arenas: long-lived global + ephemeral per-REPL-line
+    Arena globalArena_{};
+    Arena lineArena_{};
+    bool inLineMode_ {false};
+    Arena::Frame currentLineFrame_{};
+    std::vector<std::string> lineTouched_{}; // vars declared/assigned this line for promotion
+    // Env stack uses global arena for keys/buckets
+    std::vector<Arena::Frame> scopeFrames_{};
+    EnvStack<Value> env_{};
+    // Active arena selector
+    Arena& activeArena() { return inLineMode_ ? lineArena_ : globalArena_; }
     // Helpers for scoping
     void enterScope();
     void exitScope();
@@ -41,6 +66,8 @@ private:
     std::string evaluatePrintExpr(std::shared_ptr<ASTNode> expr);
     Value evaluateValue(std::shared_ptr<ASTNode> expr);
     Value executeSpellBody(const SpellDef &def);
+    // Promotion helpers
+    Value promoteToGlobal(const Value& v);
 public:
     void execute(std::shared_ptr<ASTNode> ast);
     void evaluateExpression(std::shared_ptr<ASTNode> expr);
@@ -52,6 +79,9 @@ public:
     void executeWhileLoop(std::shared_ptr<WhileLoop> loop);
     void executeForLoop(std::shared_ptr<ForLoop> loop);
     void executeDoWhileLoop(std::shared_ptr<DoWhileLoop> loop);
+    // REPL line lifecycle
+    void beginLine();
+    void endLine();
     // Export helpers for module system
     std::unordered_map<std::string, Value> getGlobals() const { return scopes.front(); }
     std::unordered_map<std::string, SpellDef> getSpells() const { return spells; }

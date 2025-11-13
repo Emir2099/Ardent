@@ -5,11 +5,13 @@
 #include <memory>
 #include "token.h"
 #include "ast.h"
+#include "arena.h"
 
 class Parser {
 private:
     std::vector<Token> tokens;
     size_t current;
+    Arena* arena; // optional arena for AST node allocation
 
     Token peek();
     Token advance();
@@ -47,7 +49,19 @@ private:
     
 public:
     Parser(std::vector<Token> tokens);
+    Parser(std::vector<Token> tokens, Arena* arena);
     std::shared_ptr<ASTNode> parse();
+
+private:
+    template <typename T, typename... Args>
+    std::shared_ptr<T> node(Args&&... args) {
+        if (arena) {
+            void* mem = arena->alloc(sizeof(T), alignof(T));
+            T* ptr = new (mem) T(std::forward<Args>(args)...);
+            return std::shared_ptr<T>(ptr, [](T*){/* arena-owned, no delete */});
+        }
+        return std::make_shared<T>(std::forward<Args>(args)...);
+    }
 };
 
 #endif

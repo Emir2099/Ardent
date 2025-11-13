@@ -2,6 +2,7 @@
 #include <sstream>
 #include "lexer.h"
 #include "parser.h"
+#include "arena.h"
 #include "interpreter.h"
 #include "token.h"
 int main(){
@@ -18,7 +19,8 @@ Let it be proclaimed: "Outer: " + outer\
     auto tokens = lexer.tokenize();
     std::cout << "--- TOKENS ---\n";
     for(auto &t: tokens){ std::cout << tokenTypeToString(t.type) << " | " << t.value << "\n"; }
-    Parser parser(tokens);
+    Arena arena; // arena for this debug parse
+    Parser parser(tokens, &arena);
     auto ast = parser.parse();
     if(!ast){ std::cerr << "Parse failed" << std::endl; return 1; }
     std::cout << "--- EXECUTION OUTPUT ---\n";

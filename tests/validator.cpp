@@ -118,6 +118,8 @@ static bool predictInfiniteFor(std::shared_ptr<ASTNode> ast) {
 }
 
 int main() {
+    std::cout << "[Validator] Starting" << std::endl;
+    try {
     // Prepare test scroll files for import tests
     try {
         std::filesystem::create_directories("legends");
@@ -868,10 +870,12 @@ Let it be proclaimed: outer\
         }
     };
 
+    std::cout << "[Validator] Loaded tests: " << tests.size() << std::endl;
     int passed = 0;
     int failed = 0;
 
     for (const auto &tc : tests) {
+        std::cout << "[RUN] " << tc.name << std::endl;
         Lexer lexer(tc.program);
         auto tokens = lexer.tokenize();
         // no debug printing in normal runs
@@ -951,4 +955,11 @@ Let it be proclaimed: outer\
 
     std::cout << "\nSummary: " << passed << " passed, " << failed << " failed" << std::endl;
     return failed == 0 ? 0 : 1;
+    } catch (const std::exception& ex) {
+        std::cerr << "[Validator] Uncaught exception: " << ex.what() << std::endl;
+        return 1;
+    } catch (...) {
+        std::cerr << "[Validator] Unknown fatal error" << std::endl;
+        return 1;
+    }
 }

@@ -12,9 +12,58 @@
 #include <filesystem>
 #include <exception>
 // Shared caches/guards for module system across nested interpreters
-static std::unordered_map<std::string, Interpreter::Module> g_moduleCache;
+#include "token.h"
+#include "arena.h"
 static std::unordered_map<std::string, bool> g_importing;
 
+// ===== Line arena lifecycle and promotion (after includes for full type visibility) =====
+Interpreter::Value Interpreter::promoteToGlobal(const Value& v) {
+    // For Phrase: if currently built in line arena, copy data into global arena
+    if (std::holds_alternative<Phrase>(v)) {
+        const Phrase &p = std::get<Phrase>(v);
+        // If phrase is large (arena-backed), we allocate new global copy
+        if (p.size() > Phrase::SSO_MAX) {
+            Phrase np = Phrase::make(p.data(), p.size(), globalArena_);
+            return np;
+        }
+        return v; // small inline phrase already independent
+    }
+    if (std::holds_alternative<Order>(v)) {
+        const Order &ord = std::get<Order>(v);
+        void* mem = globalArena_.alloc(sizeof(SimpleValue) * ord.size, alignof(SimpleValue));
+        auto* buf = reinterpret_cast<SimpleValue*>(mem);
+        for (size_t i = 0; i < ord.size; ++i) new (&buf[i]) SimpleValue(ord.data[i]);
+        return Order{ ord.size, buf };
+    }
+    if (std::holds_alternative<Tome>(v)) {
+        const Tome &tm = std::get<Tome>(v);
+        void* mem = globalArena_.alloc(sizeof(TomeEntry) * tm.size, alignof(TomeEntry));
+        auto* buf = reinterpret_cast<TomeEntry*>(mem);
+        for (size_t i = 0; i < tm.size; ++i) new (&buf[i]) TomeEntry{ tm.data[i].key, tm.data[i].value };
+        return Tome{ tm.size, buf };
+    }
+    return v; // primitives and legacy containers unaffected
+}
+
+void Interpreter::beginLine() {
+    if (inLineMode_) return; // nested safeguard
+    inLineMode_ = true;
+    currentLineFrame_ = lineArena_.pushFrame();
+    lineTouched_.clear();
+}
+
+void Interpreter::endLine() {
+    if (!inLineMode_) return;
+    // Promote touched variables into global arena when they reference line arena allocations
+    for (const auto &name : lineTouched_) {
+        Value v; if (!lookupVariable(name, v)) continue;
+        Value promoted = promoteToGlobal(v);
+        assignVariableAny(name, promoted); // rebind (will not duplicate promotion for primitives)
+    }
+    lineArena_.popFrame(currentLineFrame_);
+    inLineMode_ = false;
+}
+ 
 // Helpers for pretty-printing values in narrative style
 // Exception type for Ardent curses
 class ArdentError : public std::exception {
@@ -34,6 +83,16 @@ static std::string escapeString(const std::string &s) {
     return out;
 }
 
+// Phrase interop helpers (defined early for global use)
+static inline bool isStringLike(const Interpreter::Value& v) {
+    return std::holds_alternative<std::string>(v) || std::holds_alternative<Phrase>(v);
+}
+static inline std::string asStdString(const Interpreter::Value& v) {
+    if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+    if (std::holds_alternative<Phrase>(v)) { const Phrase& p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
+    return std::string("");
+}
+
 static std::string formatSimple(const Interpreter::SimpleValue &sv) {
     if (std::holds_alternative<int>(sv)) return std::to_string(std::get<int>(sv));
     if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv) ? std::string("True") : std::string("False");
@@ -45,6 +104,16 @@ static std::string formatValue(const Interpreter::Value &v) {
     if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
     if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
     if (std::holds_alternative<std::string>(v)) return std::string("\"") + escapeString(std::get<std::string>(v)) + "\"";
+    if (std::holds_alternative<Phrase>(v)) {
+        const Phrase &p = std::get<Phrase>(v);
+        return std::string("\"") + escapeString(std::string(p.data(), p.size())) + "\"";
+    }
+    if (std::holds_alternative<Interpreter::Order>(v)) {
+        const auto &ord = std::get<Interpreter::Order>(v);
+        std::ostringstream oss; oss << "[ ";
+        for (size_t i = 0; i < ord.size; ++i) { if (i) oss << ", "; oss << formatSimple(ord.data[i]); }
+        oss << " ]"; return oss.str();
+    }
     if (std::holds_alternative<std::vector<Interpreter::SimpleValue>>(v)) {
         const auto &vec = std::get<std::vector<Interpreter::SimpleValue>>(v);
         std::ostringstream oss;
@@ -55,6 +124,16 @@ static std::string formatValue(const Interpreter::Value &v) {
         }
         oss << " ]";
         return oss.str();
+    }
+    if (std::holds_alternative<Interpreter::Tome>(v)) {
+        const auto &tm = std::get<Interpreter::Tome>(v);
+        std::ostringstream oss; oss << "{ "; bool first = true;
+        for (size_t i = 0; i < tm.size; ++i) {
+            const auto &e = tm.data[i];
+            if (!first) oss << ", "; first = false;
+            oss << "\"" << escapeString(e.key) << "\"" << ": " << formatSimple(e.value);
+        }
+        oss << " }"; return oss.str();
     }
     if (std::holds_alternative<std::unordered_map<std::string, Interpreter::SimpleValue>>(v)) {
         const auto &mp = std::get<std::unordered_map<std::string, Interpreter::SimpleValue>>(v);
@@ -76,6 +155,9 @@ static std::string formatValue(const Interpreter::Value &v) {
 Interpreter::Interpreter() {
     // Initialize global scope
     scopes.emplace_back();
+    // Initialize environment stack with global frame
+    scopeFrames_.push_back(globalArena_.pushFrame());
+    env_.push(globalArena_);
     // Register built-in native functions
     registerNative("math.add", [this](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) {
@@ -85,6 +167,7 @@ Interpreter::Interpreter() {
             if (std::holds_alternative<int>(v)) return std::get<int>(v);
             if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
             if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+            if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { return std::stoi(std::string(p.data(), p.size())); } catch (...) { return 0; } }
             return 0;
         };
         return toNum(args[0]) + toNum(args[1]);
@@ -95,7 +178,10 @@ Interpreter::Interpreter() {
         }
         const Value &v = args[0];
         if (std::holds_alternative<std::string>(v)) return static_cast<int>(std::get<std::string>(v).size());
+        if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return static_cast<int>(p.size()); }
+        if (std::holds_alternative<Order>(v)) return static_cast<int>(std::get<Order>(v).size);
         if (std::holds_alternative<std::vector<SimpleValue>>(v)) return static_cast<int>(std::get<std::vector<SimpleValue>>(v).size());
+        if (std::holds_alternative<Tome>(v)) return static_cast<int>(std::get<Tome>(v).size);
         if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return static_cast<int>(std::get<std::unordered_map<std::string, SimpleValue>>(v).size());
         // numbers/bools -> length not meaningful; return 0
         return 0;
@@ -108,6 +194,7 @@ Interpreter::Interpreter() {
             if (std::holds_alternative<int>(v)) return std::get<int>(v);
             if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
             if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+            if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { return std::stoi(std::string(p.data(), p.size())); } catch (...) { return 0; } }
             return 0;
         };
         int a = toNum(args[0]);
@@ -128,10 +215,10 @@ Interpreter::Interpreter() {
         if (args.size() != 1) {
             throw ArdentError("The spirits demand 1 offering for 'chronicles.read', yet " + std::to_string(args.size()) + " were placed.");
         }
-        if (!std::holds_alternative<std::string>(args[0])) {
+        if (!(std::holds_alternative<std::string>(args[0]) || std::holds_alternative<Phrase>(args[0]))) {
             throw ArdentError("A scroll path must be a phrase.");
         }
-        std::string path = std::get<std::string>(args[0]);
+        std::string path = std::holds_alternative<std::string>(args[0]) ? std::get<std::string>(args[0]) : std::string(std::get<Phrase>(args[0]).data(), std::get<Phrase>(args[0]).size());
         if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
         std::ifstream in(path, std::ios::binary);
         if (!in) throw ArdentError("The scroll cannot be opened: '" + path + "'.");
@@ -140,12 +227,13 @@ Interpreter::Interpreter() {
     });
     registerNative("chronicles.write", [pathAllowed](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'chronicles.write'.");
-        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
-        std::string path = std::get<std::string>(args[0]);
+        if (!(std::holds_alternative<std::string>(args[0]) || std::holds_alternative<Phrase>(args[0]))) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::holds_alternative<std::string>(args[0]) ? std::get<std::string>(args[0]) : std::string(std::get<Phrase>(args[0]).data(), std::get<Phrase>(args[0]).size());
         if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
         std::string content;
         const Value &v = args[1];
         if (std::holds_alternative<std::string>(v)) content = std::get<std::string>(v);
+        else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); content.assign(p.data(), p.size()); }
         else if (std::holds_alternative<int>(v)) content = std::to_string(std::get<int>(v));
         else if (std::holds_alternative<bool>(v)) content = std::get<bool>(v) ? "True" : "False";
         else content = formatValue(v);
@@ -156,12 +244,13 @@ Interpreter::Interpreter() {
     });
     registerNative("chronicles.append", [pathAllowed](const std::vector<Value>& args) -> Value {
         if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'chronicles.append'.");
-        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
-        std::string path = std::get<std::string>(args[0]);
+        if (!(std::holds_alternative<std::string>(args[0]) || std::holds_alternative<Phrase>(args[0]))) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::holds_alternative<std::string>(args[0]) ? std::get<std::string>(args[0]) : std::string(std::get<Phrase>(args[0]).data(), std::get<Phrase>(args[0]).size());
         if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
         std::string content;
         const Value &v = args[1];
         if (std::holds_alternative<std::string>(v)) content = std::get<std::string>(v);
+        else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); content.assign(p.data(), p.size()); }
         else if (std::holds_alternative<int>(v)) content = std::to_string(std::get<int>(v));
         else if (std::holds_alternative<bool>(v)) content = std::get<bool>(v) ? "True" : "False";
         else content = formatValue(v);
@@ -172,15 +261,15 @@ Interpreter::Interpreter() {
     });
     registerNative("chronicles.exists", [pathAllowed](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) throw ArdentError("The spirits demand 1 offering for 'chronicles.exists'.");
-        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
-        std::string path = std::get<std::string>(args[0]);
+        if (!(std::holds_alternative<std::string>(args[0]) || std::holds_alternative<Phrase>(args[0]))) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::holds_alternative<std::string>(args[0]) ? std::get<std::string>(args[0]) : std::string(std::get<Phrase>(args[0]).data(), std::get<Phrase>(args[0]).size());
         if (!pathAllowed(path)) return false;
         std::error_code ec; return std::filesystem::exists(path, ec);
     });
     registerNative("chronicles.delete", [pathAllowed](const std::vector<Value>& args) -> Value {
         if (args.size() != 1) throw ArdentError("The spirits demand 1 offering for 'chronicles.delete'.");
-        if (!std::holds_alternative<std::string>(args[0])) throw ArdentError("A scroll path must be a phrase.");
-        std::string path = std::get<std::string>(args[0]);
+        if (!(std::holds_alternative<std::string>(args[0]) || std::holds_alternative<Phrase>(args[0]))) throw ArdentError("A scroll path must be a phrase.");
+        std::string path = std::holds_alternative<std::string>(args[0]) ? std::get<std::string>(args[0]) : std::string(std::get<Phrase>(args[0]).data(), std::get<Phrase>(args[0]).size());
         if (!pathAllowed(path)) throw ArdentError("The Chronicle ward forbids that path: '" + path + "'.");
         std::error_code ec; bool ok = std::filesystem::remove(path, ec);
         if (!ok && ec) throw ArdentError("The scroll cannot be banished: '" + path + "'.");
@@ -188,8 +277,20 @@ Interpreter::Interpreter() {
     });
 }
 
-void Interpreter::enterScope() { scopes.emplace_back(); }
-void Interpreter::exitScope() { if (scopes.size() > 1) scopes.pop_back(); }
+void Interpreter::enterScope() {
+    scopes.emplace_back();
+    scopeFrames_.push_back(globalArena_.pushFrame());
+    env_.push(globalArena_);
+}
+void Interpreter::exitScope() {
+    if (scopes.size() > 1) {
+        scopes.pop_back();
+        env_.pop();
+        auto fr = scopeFrames_.back();
+        scopeFrames_.pop_back();
+        globalArena_.popFrame(fr);
+    }
+}
 
 int Interpreter::findScopeIndex(const std::string& name) const {
     for (int i = static_cast<int>(scopes.size()) - 1; i >= 0; --i) {
@@ -199,6 +300,7 @@ int Interpreter::findScopeIndex(const std::string& name) const {
 }
 
 bool Interpreter::lookupVariable(const std::string& name, Value& out) const {
+    if (auto* v = const_cast<EnvStack<Value>&>(env_).lookup(name.c_str(), static_cast<std::uint32_t>(name.size()))) { out = *v; return true; }
     int idx = findScopeIndex(name);
     if (idx >= 0) { out = scopes[static_cast<size_t>(idx)].at(name); return true; }
     return false;
@@ -206,12 +308,18 @@ bool Interpreter::lookupVariable(const std::string& name, Value& out) const {
 
 void Interpreter::declareVariable(const std::string& name, const Value& value) {
     scopes.back()[name] = value;
+    // Mirror into new env stack (local scope)
+    env_.declare(name.c_str(), static_cast<std::uint32_t>(name.size()), value);
+    if (inLineMode_) lineTouched_.push_back(name);
     // Debug
     std::cout << "Variable assigned: " << name << " = ";
     if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
     else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+    else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
     else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+    else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
     else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+    else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
     else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
     std::cout << std::endl;
 }
@@ -223,12 +331,18 @@ void Interpreter::assignVariableAny(const std::string& name, const Value& value)
     } else {
         scopes.back()[name] = value; // implicit local
     }
+    // Mirror assignment/update into new env stack (will search for existing scope, else local declare)
+    env_.assign(name.c_str(), static_cast<std::uint32_t>(name.size()), value);
+    if (inLineMode_) lineTouched_.push_back(name);
     // Debug
     std::cout << "Variable assigned: " << name << " = ";
     if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
     else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+    else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
     else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+    else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
     else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+    else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
     else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
     std::cout << std::endl;
 }
@@ -276,8 +390,10 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         switch (e->token.type) {
             case TokenType::NUMBER:
                 return std::stoi(e->token.value);
-            case TokenType::STRING:
-                return e->token.value;
+            case TokenType::STRING: {
+                Phrase p = Phrase::make(e->token.value.data(), e->token.value.size(), activeArena());
+                return p;
+            }
             case TokenType::BOOLEAN:
                 return e->token.value == "True";
             case TokenType::IDENTIFIER: {
@@ -291,19 +407,19 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         }
     }
     if (auto arr = std::dynamic_pointer_cast<ArrayLiteral>(expr)) {
-        std::vector<SimpleValue> out;
-        out.reserve(arr->elements.size());
+        size_t n = arr->elements.size();
+    void* mem = activeArena().alloc(sizeof(SimpleValue) * n, alignof(SimpleValue));
+        auto* buf = reinterpret_cast<SimpleValue*>(mem);
+        size_t i = 0;
         for (auto &el : arr->elements) {
             Value v = evaluateValue(el);
-            if (std::holds_alternative<int>(v)) out.emplace_back(std::get<int>(v));
-            else if (std::holds_alternative<std::string>(v)) out.emplace_back(std::get<std::string>(v));
-            else if (std::holds_alternative<bool>(v)) out.emplace_back(std::get<bool>(v));
-            else {
-                std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside an order" << std::endl;
-                out.emplace_back(0);
-            }
+            if (std::holds_alternative<int>(v)) new (&buf[i++]) SimpleValue(std::get<int>(v));
+            else if (std::holds_alternative<std::string>(v)) new (&buf[i++]) SimpleValue(std::get<std::string>(v));
+            else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); new (&buf[i++]) SimpleValue(std::string(p.data(), p.size())); }
+            else if (std::holds_alternative<bool>(v)) new (&buf[i++]) SimpleValue(std::get<bool>(v));
+            else { std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside an order" << std::endl; new (&buf[i++]) SimpleValue(0); }
         }
-        return out;
+        return Order{ n, buf };
     }
     if (auto invoke = std::dynamic_pointer_cast<SpellInvocation>(expr)) {
         // Resolve spell
@@ -338,18 +454,21 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         return retVal;
     }
     if (auto obj = std::dynamic_pointer_cast<ObjectLiteral>(expr)) {
-        std::unordered_map<std::string, SimpleValue> out;
-        for (auto &kv : obj->entries) {
+        size_t n = obj->entries.size();
+    void* mem = activeArena().alloc(sizeof(TomeEntry) * n, alignof(TomeEntry));
+        auto* buf = reinterpret_cast<TomeEntry*>(mem);
+        for (size_t i = 0; i < n; ++i) {
+            const auto &kv = obj->entries[i];
             Value v = evaluateValue(kv.second);
-            if (std::holds_alternative<int>(v)) out.emplace(kv.first, std::get<int>(v));
-            else if (std::holds_alternative<std::string>(v)) out.emplace(kv.first, std::get<std::string>(v));
-            else if (std::holds_alternative<bool>(v)) out.emplace(kv.first, std::get<bool>(v));
-            else {
-                std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside a tome" << std::endl;
-                out.emplace(kv.first, 0);
-            }
+            SimpleValue sv;
+            if (std::holds_alternative<int>(v)) sv = std::get<int>(v);
+            else if (std::holds_alternative<std::string>(v)) sv = std::get<std::string>(v);
+            else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); sv = std::string(p.data(), p.size()); }
+            else if (std::holds_alternative<bool>(v)) sv = std::get<bool>(v);
+            else { std::cerr << "TypeError: Only simple values (number, phrase, truth) allowed inside a tome" << std::endl; sv = 0; }
+            new (&buf[i]) TomeEntry{ kv.first, std::move(sv) };
         }
-        return out;
+        return Tome{ n, buf };
     }
     if (auto native = std::dynamic_pointer_cast<NativeInvocation>(expr)) {
         auto it = nativeRegistry.find(native->funcName);
@@ -370,7 +489,22 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
     if (auto idx = std::dynamic_pointer_cast<IndexExpression>(expr)) {
         Value target = evaluateValue(idx->target);
         Value key = evaluateValue(idx->index);
-        // Index into order
+        // Index into order (arena-backed)
+        if (std::holds_alternative<Order>(target)) {
+            int i = 0;
+            if (std::holds_alternative<int>(key)) i = std::get<int>(key);
+            else { std::cerr << "TypeError: Order index must be a number" << std::endl; return 0; }
+            const auto &ord = std::get<Order>(target);
+            size_t n = ord.size;
+            if (i < 0) { int abs = -i; if (static_cast<size_t>(abs) > n) { std::cerr << "Error: None stand that far behind in the order, for only " << n << " dwell within." << std::endl; runtimeError = true; return 0; } i = static_cast<int>(n) + i; }
+            if (i < 0 || static_cast<size_t>(i) >= n) { std::string oname = "the order"; if (auto idExpr = std::dynamic_pointer_cast<Expression>(idx->target)) { if (idExpr->token.type == TokenType::IDENTIFIER) { oname = "'" + idExpr->token.value + "'"; } } std::cerr << "Error: The council knows no element at position " << i << ", for the order " << oname << " holds but " << n << "." << std::endl; runtimeError = true; return 0; }
+            const SimpleValue &sv = ord.data[static_cast<size_t>(i)];
+            if (std::holds_alternative<int>(sv)) return std::get<int>(sv);
+            if (std::holds_alternative<std::string>(sv)) return std::get<std::string>(sv);
+            if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv);
+            return 0;
+        }
+        // Index into order (legacy)
         if (std::holds_alternative<std::vector<SimpleValue>>(target)) {
             int i = 0;
             if (std::holds_alternative<int>(key)) i = std::get<int>(key);
@@ -410,10 +544,29 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv);
             return 0;
         }
-        // Index into tome
+        // Index into tome (arena-backed)
+        if (std::holds_alternative<Tome>(target)) {
+            std::string k;
+            if (std::holds_alternative<std::string>(key)) k = std::get<std::string>(key);
+            else if (std::holds_alternative<Phrase>(key)) { const Phrase &p = std::get<Phrase>(key); k.assign(p.data(), p.size()); }
+            else { std::cerr << "TypeError: Tome key must be a phrase" << std::endl; return 0; }
+            const auto &tm = std::get<Tome>(target);
+            for (size_t i = 0; i < tm.size; ++i) {
+                if (tm.data[i].key == k) {
+                    const SimpleValue &sv = tm.data[i].value;
+                    if (std::holds_alternative<int>(sv)) return std::get<int>(sv);
+                    if (std::holds_alternative<std::string>(sv)) return std::get<std::string>(sv);
+                    if (std::holds_alternative<bool>(sv)) return std::get<bool>(sv);
+                    return 0;
+                }
+            }
+            std::cerr << "KeyError: Tome has no entry for '" << k << "'" << std::endl; return 0;
+        }
+        // Index into tome (legacy)
         if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(target)) {
             std::string k;
             if (std::holds_alternative<std::string>(key)) k = std::get<std::string>(key);
+            else if (std::holds_alternative<Phrase>(key)) { const Phrase &p = std::get<Phrase>(key); k.assign(p.data(), p.size()); }
             else {
                 std::cerr << "TypeError: Tome key must be a phrase" << std::endl;
                 return 0;
@@ -484,8 +637,10 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
                 // Conservative: if either side yields string in evaluateValue, treat as string
                 Value lv = evaluateValue(b->left);
                 Value rv = evaluateValue(b->right);
-                if (std::holds_alternative<std::string>(lv) || std::holds_alternative<std::string>(rv)) {
-                    return evaluatePrintExpr(expr);
+                if (isStringLike(lv) || isStringLike(rv)) {
+                    std::string s = evaluatePrintExpr(expr);
+                    Phrase p = Phrase::make(s.data(), s.size(), activeArena());
+                    return p;
                 }
                 // Otherwise numeric sum
                 int sum = evaluateExpr(expr);
@@ -516,14 +671,14 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             case CastTarget::ToNumber:
                 if (std::holds_alternative<int>(v)) return std::get<int>(v);
                 if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
-                if (std::holds_alternative<std::string>(v)) {
-                    try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; }
-                }
+                if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+                if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { return std::stoi(std::string(p.data(), p.size())); } catch (...) { return 0; } }
                 break;
             case CastTarget::ToTruth:
                 if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
                 if (std::holds_alternative<int>(v)) return std::get<int>(v) != 0 ? 1 : 0;
                 if (std::holds_alternative<std::string>(v)) return !std::get<std::string>(v).empty() ? 1 : 0;
+                if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return p.size() != 0 ? 1 : 0; }
                 break;
             case CastTarget::ToPhrase:
                 // In numeric context, phrase has no numeric value; return 0
@@ -533,9 +688,8 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
         Value v = evaluateValue(expr);
         if (std::holds_alternative<int>(v)) return std::get<int>(v);
         if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? 1 : 0;
-        if (std::holds_alternative<std::string>(v)) {
-            try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; }
-        }
+        if (std::holds_alternative<std::string>(v)) { try { return std::stoi(std::get<std::string>(v)); } catch (...) { return 0; } }
+        if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { return std::stoi(std::string(p.data(), p.size())); } catch (...) { return 0; } }
         return 0;
     } else if (auto unary = std::dynamic_pointer_cast<UnaryExpression>(expr)) {
         int val = evaluateExpr(unary->operand);
@@ -695,51 +849,117 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         // Clone-modify-reassign pattern with scoped lookup
         int scopeIdx = findScopeIndex(rite->varName);
         if (scopeIdx < 0) {
-            std::cerr << "Error: Undefined collection '" << rite->varName << "'" << std::endl;
+            std::cerr << "[CollectionRite] Undefined collection '" << rite->varName << "'" << std::endl;
             return;
         }
         Value current = scopes[static_cast<size_t>(scopeIdx)][rite->varName];
         if (rite->riteType == CollectionRiteType::OrderExpand || rite->riteType == CollectionRiteType::OrderRemove) {
-            if (!std::holds_alternative<std::vector<SimpleValue>>(current)) {
-                std::cerr << "TypeError: '" << rite->varName << "' is not an order" << std::endl; return; }
-            auto vec = std::get<std::vector<SimpleValue>>(current); // clone
-            if (rite->riteType == CollectionRiteType::OrderExpand) {
-                Value v = evaluateValue(rite->valueExpr);
-                if (std::holds_alternative<int>(v)) vec.emplace_back(std::get<int>(v));
-                else if (std::holds_alternative<std::string>(v)) vec.emplace_back(std::get<std::string>(v));
-                else if (std::holds_alternative<bool>(v)) vec.emplace_back(std::get<bool>(v));
-                else { std::cerr << "TypeError: Only simple values may be placed within an order" << std::endl; }
+            // Support arena-backed immutable Order first
+            if (std::holds_alternative<Order>(current)) {
+                const Order &old = std::get<Order>(current);
+                if (rite->riteType == CollectionRiteType::OrderExpand) {
+                    Value ev = evaluateValue(rite->valueExpr);
+                    SimpleValue sv;
+                    if (std::holds_alternative<int>(ev)) sv = std::get<int>(ev);
+                    else if (std::holds_alternative<std::string>(ev)) sv = std::get<std::string>(ev);
+                    else if (std::holds_alternative<Phrase>(ev)) { const Phrase &p = std::get<Phrase>(ev); sv = std::string(p.data(), p.size()); }
+                    else if (std::holds_alternative<bool>(ev)) sv = std::get<bool>(ev);
+                    else { std::cerr << "TypeError: Only simple values may be placed within an order" << std::endl; return; }
+                    size_t n = old.size;
+                    void* mem = activeArena().alloc(sizeof(SimpleValue) * (n + 1), alignof(SimpleValue));
+                    auto* buf = reinterpret_cast<SimpleValue*>(mem);
+                    for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(old.data[i]);
+                    new (&buf[n]) SimpleValue(std::move(sv));
+                    assignVariableAny(rite->varName, Order{ n + 1, buf });
+                } else { // remove
+                    Value v = evaluateValue(rite->keyExpr);
+                    auto equalsSimple = [&](const SimpleValue &sv) -> bool {
+                        if (std::holds_alternative<int>(v) && std::holds_alternative<int>(sv)) return std::get<int>(v)==std::get<int>(sv);
+                        if (std::holds_alternative<std::string>(v) && std::holds_alternative<std::string>(sv)) return std::get<std::string>(v)==std::get<std::string>(sv);
+                        if (std::holds_alternative<Phrase>(v) && std::holds_alternative<std::string>(sv)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()) == std::get<std::string>(sv); }
+                        if (std::holds_alternative<bool>(v) && std::holds_alternative<bool>(sv)) return std::get<bool>(v)==std::get<bool>(sv);
+                        return false;
+                    };
+                    size_t n = old.size; size_t newN = n; bool removed = false;
+                    for (size_t i = 0; i < n; ++i) { if (!removed && equalsSimple(old.data[i])) { removed = true; --newN; } }
+                    void* mem = activeArena().alloc(sizeof(SimpleValue) * newN, alignof(SimpleValue));
+                    auto* buf = reinterpret_cast<SimpleValue*>(mem); size_t w=0; removed=false;
+                    for (size_t i = 0; i < n; ++i) { if (!removed && equalsSimple(old.data[i])) { removed=true; continue; } new (&buf[w++]) SimpleValue(old.data[i]); }
+                    assignVariableAny(rite->varName, Order{ newN, buf });
+                }
+            } else if (std::holds_alternative<std::vector<SimpleValue>>(current)) {
+                auto vec = std::get<std::vector<SimpleValue>>(current); // legacy clone
+                if (rite->riteType == CollectionRiteType::OrderExpand) {
+                    Value v = evaluateValue(rite->valueExpr);
+                    if (std::holds_alternative<int>(v)) vec.emplace_back(std::get<int>(v));
+                    else if (std::holds_alternative<std::string>(v)) vec.emplace_back(std::get<std::string>(v));
+                    else if (std::holds_alternative<bool>(v)) vec.emplace_back(std::get<bool>(v));
+                    else { std::cerr << "TypeError: Only simple values may be placed within an order" << std::endl; }
+                } else {
+                    Value v = evaluateValue(rite->keyExpr);
+                    bool removed = false;
+                    auto equalsSimple = [&](const SimpleValue &sv) -> bool {
+                        if (std::holds_alternative<int>(v) && std::holds_alternative<int>(sv)) return std::get<int>(v)==std::get<int>(sv);
+                        if (std::holds_alternative<std::string>(v) && std::holds_alternative<std::string>(sv)) return std::get<std::string>(v)==std::get<std::string>(sv);
+                        if (std::holds_alternative<bool>(v) && std::holds_alternative<bool>(sv)) return std::get<bool>(v)==std::get<bool>(sv);
+                        return false;
+                    };
+                    vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const SimpleValue &sv){ if (!removed && equalsSimple(sv)) { removed=true; return true;} return false;}), vec.end());
+                }
+                assignVariableAny(rite->varName, vec);
             } else {
-                // remove by value equality (simple values only)
-                Value v = evaluateValue(rite->keyExpr);
-                bool removed = false;
-                auto equalsSimple = [&](const SimpleValue &sv) -> bool {
-                    if (std::holds_alternative<int>(v) && std::holds_alternative<int>(sv)) return std::get<int>(v)==std::get<int>(sv);
-                    if (std::holds_alternative<std::string>(v) && std::holds_alternative<std::string>(sv)) return std::get<std::string>(v)==std::get<std::string>(sv);
-                    if (std::holds_alternative<bool>(v) && std::holds_alternative<bool>(sv)) return std::get<bool>(v)==std::get<bool>(sv);
-                    return false;
-                };
-                vec.erase(std::remove_if(vec.begin(), vec.end(), [&](const SimpleValue &sv){ if (!removed && equalsSimple(sv)) { removed=true; return true;} return false;}), vec.end());
+                std::cerr << "TypeError: '" << rite->varName << "' is not an order" << std::endl; return;
             }
-            scopes[static_cast<size_t>(scopeIdx)][rite->varName] = vec;
         } else {
-            // Tome amend/erase
-            if (!std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(current)) {
-                std::cerr << "TypeError: '" << rite->varName << "' is not a tome" << std::endl; return; }
-            auto mp = std::get<std::unordered_map<std::string, SimpleValue>>(current); // clone
+            // Tome amend/erase (supports arena-backed Tome and legacy map)
             Value keyV = evaluateValue(rite->keyExpr);
-            if (!std::holds_alternative<std::string>(keyV)) { std::cerr << "TypeError: Tome keys must be phrases" << std::endl; return; }
-            std::string key = std::get<std::string>(keyV);
-            if (rite->riteType == CollectionRiteType::TomeAmend) {
-                Value val = evaluateValue(rite->valueExpr);
-                if (std::holds_alternative<int>(val)) mp[key] = std::get<int>(val);
-                else if (std::holds_alternative<std::string>(val)) mp[key] = std::get<std::string>(val);
-                else if (std::holds_alternative<bool>(val)) mp[key] = std::get<bool>(val);
-                else { std::cerr << "TypeError: Tome values must be simple" << std::endl; }
+            std::string key;
+            if (std::holds_alternative<std::string>(keyV)) key = std::get<std::string>(keyV);
+            else if (std::holds_alternative<Phrase>(keyV)) { const Phrase &p = std::get<Phrase>(keyV); key.assign(p.data(), p.size()); }
+            else { std::cerr << "TypeError: Tome keys must be phrases" << std::endl; return; }
+            if (std::holds_alternative<Tome>(current)) {
+                const Tome &oldT = std::get<Tome>(current);
+                // Compute new size and copy entries
+                size_t n = oldT.size; size_t newN = n;
+                bool found = false;
+                for (size_t i = 0; i < n; ++i) { if (oldT.data[i].key == key) { found = true; break; } }
+                if (rite->riteType == CollectionRiteType::TomeAmend && !found) newN = n + 1;
+                if (rite->riteType == CollectionRiteType::TomeErase && found) newN = n - 1;
+                void* mem = activeArena().alloc(sizeof(TomeEntry) * newN, alignof(TomeEntry));
+                auto* buf = reinterpret_cast<TomeEntry*>(mem);
+                size_t w = 0;
+                if (rite->riteType == CollectionRiteType::TomeAmend) {
+                    // Compute new value
+                    Value val = evaluateValue(rite->valueExpr);
+                    SimpleValue sv;
+                    if (std::holds_alternative<int>(val)) sv = std::get<int>(val);
+                    else if (std::holds_alternative<std::string>(val)) sv = std::get<std::string>(val);
+                    else if (std::holds_alternative<Phrase>(val)) { const Phrase &p = std::get<Phrase>(val); sv = std::string(p.data(), p.size()); }
+                    else if (std::holds_alternative<bool>(val)) sv = std::get<bool>(val);
+                    else { std::cerr << "TypeError: Tome values must be simple" << std::endl; return; }
+                    bool updated = false;
+                    for (size_t i = 0; i < n; ++i) {
+                        if (oldT.data[i].key == key) { new (&buf[w++]) TomeEntry{ key, sv }; updated = true; }
+                        else { new (&buf[w++]) TomeEntry{ oldT.data[i].key, oldT.data[i].value }; }
+                    }
+                    if (!updated) { new (&buf[w++]) TomeEntry{ key, sv }; }
+                } else { // erase
+                    for (size_t i = 0; i < n; ++i) { if (oldT.data[i].key != key) { new (&buf[w++]) TomeEntry{ oldT.data[i].key, oldT.data[i].value }; } }
+                }
+                assignVariableAny(rite->varName, Tome{ newN, buf });
+            } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(current)) {
+                auto mp = std::get<std::unordered_map<std::string, SimpleValue>>(current); // clone
+                if (rite->riteType == CollectionRiteType::TomeAmend) {
+                    Value val = evaluateValue(rite->valueExpr);
+                    if (std::holds_alternative<int>(val)) mp[key] = std::get<int>(val);
+                    else if (std::holds_alternative<std::string>(val)) mp[key] = std::get<std::string>(val);
+                    else if (std::holds_alternative<bool>(val)) mp[key] = std::get<bool>(val);
+                    else { std::cerr << "TypeError: Tome values must be simple" << std::endl; }
+                } else { mp.erase(key); }
+                assignVariableAny(rite->varName, mp);
             } else {
-                mp.erase(key);
+                std::cerr << "TypeError: '" << rite->varName << "' is not a tome" << std::endl; return;
             }
-            scopes[static_cast<size_t>(scopeIdx)][rite->varName] = mp;
         }
     }
     else if (auto impAll = std::dynamic_pointer_cast<ImportAll>(ast)) {
@@ -780,9 +1000,10 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         std::ifstream in(unfurl->path);
         if (!in) { std::cerr << "The scroll cannot be found at this path: '" << unfurl->path << "'." << std::endl; return; }
         std::stringstream buffer; buffer << in.rdbuf();
-        Lexer lx(buffer.str());
-        auto toks = lx.tokenize();
-        Parser p(std::move(toks));
+    Lexer lx(buffer.str());
+    auto toks = lx.tokenize();
+    Arena astArena; // ephemeral arena for included scroll parse
+    Parser p(std::move(toks), &astArena);
         auto otherAst = p.parse();
         if (!otherAst) return;
         execute(otherAst);
@@ -978,9 +1199,11 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             Value v;
             if (lookupVariable(strExpr->token.value, v)) {
                 if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+                if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
                 if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
                 if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
-                if (std::holds_alternative<std::vector<SimpleValue>>(v) || std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return formatValue(v);
+                if (std::holds_alternative<Order>(v) || std::holds_alternative<Tome>(v) ||
+                    std::holds_alternative<std::vector<SimpleValue>>(v) || std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) return formatValue(v);
             }
             std::cerr << "Error: Undefined variable '" << strExpr->token.value << "'" << std::endl;
             return "";
@@ -998,7 +1221,8 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
             runtimeError = false;
             return std::string("");
         }
-        if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+    if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+    if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
         if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
         if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
         // Collections and other values via pretty-printer
@@ -1007,6 +1231,7 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         if (castExpr->target == CastTarget::ToPhrase) {
             Value v = evaluateValue(castExpr->operand);
             if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+            if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
             if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
             if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
             return std::string("");
@@ -1036,7 +1261,7 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
                     if (e->token.type == TokenType::STRING) return true;
                     if (e->token.type == TokenType::IDENTIFIER) {
                         Value tmp;
-                        if (lookupVariable(e->token.value, tmp) && std::holds_alternative<std::string>(tmp)) return true;
+                        if (lookupVariable(e->token.value, tmp) && (std::holds_alternative<std::string>(tmp) || std::holds_alternative<Phrase>(tmp))) return true;
                     }
                 }
                 if (auto c = std::dynamic_pointer_cast<CastExpression>(n)) {
@@ -1107,6 +1332,7 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         // Pretty print result if present
         if (!hasReturn) return std::string("");
         if (std::holds_alternative<std::string>(retVal)) return std::get<std::string>(retVal);
+        if (std::holds_alternative<Phrase>(retVal)) { const Phrase &p = std::get<Phrase>(retVal); return std::string(p.data(), p.size()); }
         if (std::holds_alternative<bool>(retVal)) return std::get<bool>(retVal) ? std::string("True") : std::string("False");
         if (std::holds_alternative<int>(retVal)) return std::to_string(std::get<int>(retVal));
         return formatValue(retVal);
@@ -1164,32 +1390,32 @@ Interpreter::Module Interpreter::loadModule(const std::string& path) {
         return Module{};
     }
     // Cache hit
-    auto found = g_moduleCache.find(path);
-    if (found != g_moduleCache.end()) return found->second;
+    auto found = moduleCache.find(path);
+    if (found != moduleCache.end()) return found->second;
     // File exists?
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
         std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl;
         return Module{};
     }
-    // Read file
+    // Read file contents
     std::ifstream in(path);
     if (!in) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return Module{}; }
     std::stringstream buffer; buffer << in.rdbuf();
-    // Parse and execute in isolated interpreter
+    // Parse using global arena so spell bodies persist
     Lexer lx(buffer.str());
     auto toks = lx.tokenize();
-    Parser p(std::move(toks));
+    Parser p(std::move(toks), &globalArena_);
     auto ast = p.parse();
     if (!ast) return Module{};
     g_importing[path] = true;
-    Interpreter temp;
-    temp.execute(ast);
+    // Execute directly; declarations land in global scope, spells registered here
+    execute(ast);
     g_importing.erase(path);
     Module m;
-    m.variables = temp.getGlobals();
-    m.spells = temp.getSpells();
-    g_moduleCache[path] = m;
+    m.variables = scopes.front(); // snapshot of global variables (may include pre-existing ones)
+    m.spells = spells;            // all spells currently registered
+    moduleCache[path] = m;
     return m;
 }
 
@@ -1234,5 +1460,7 @@ std::string Interpreter::stringifyValueForRepl(const Interpreter::Value& v) {
     if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
     if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
     if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
+    if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
     return formatValue(v);
 }
+ 
