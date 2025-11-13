@@ -332,6 +332,50 @@ All current behavioral tests: `73 passed, 0 failed` — includes literals, colle
 
 ---
 
+## ⚙️ Phase 1.2 — The Virtual Ember 🔥
+
+“When words take flight as bytecode.”
+
+> “When once mere verse was read by an interpreter,
+> now each line burns upon the scroll,
+> a spark translated into bytecode,
+> and the VM breathes it into life again.”
+
+### Highlights
+- Bytecode VM (AVM) with a compact instruction set (arithmetic, logic, comparisons, vars, jumps, print, halt).
+- AST → Bytecode compiler for expressions, assignments, prints, and `if/else` with patching.
+- Disassembler for human‑readable listings with constants and jump targets.
+- `.avm` binary format: save/load compiled chunks for fast start and distribution.
+- VM Execution Mode: compile source and run directly via `--vm`.
+- REPL Hot‑Reload: `--vm-repl` compiles each line and preserves globals in the live VM.
+
+### Quick Usage
+- Compile and run a scroll in the VM:
+    - `./ardent_vm.exe --vm path/to/scroll.ardent`
+- Disassemble a scroll or an existing `.avm`:
+    - `./ardent_vm.exe --disassemble path/to/scroll.ardent`
+    - `./ardent_vm.exe --disassemble demo.avm`
+- Save compiled bytecode to `.avm`:
+    - `./ardent_vm.exe --disassemble --save-avm demo.avm path/to/scroll.ardent`
+- Run a prebuilt `.avm`:
+    - `./ardent_vm.exe --vm demo.avm`
+- AVM REPL (hot‑reload globals):
+    - `./ardent_vm.exe --vm-repl`
+
+### AVM Components
+- `opcode.h`: Instruction set (`OP_PUSH_CONST`, `OP_LOAD/STORE`, `OP_ADD/SUB/MUL/DIV`, `OP_AND/OR/NOT`, `OP_EQ/NE/GT/LT/GE/LE`, `OP_JMP/JMP_IF_FALSE`, `OP_PRINT`, `OP_HALT`).
+- `bytecode.h`: `Chunk`, `BytecodeEmitter`, and `.avm` save/load helpers.
+- `vm.h`: Stack interpreter, flat slot variables, relative jumps, phrase and numeric semantics.
+- `compiler_avm.h`: AST traversal, constant pool, slot symbols, and jump patching.
+- `disassembler.h`: Mnemonic listing with constants and resolved targets.
+
+### Notes
+- REPL retains globals by persisting VM slots; each line compiles with a fresh emitter to avoid code accumulation.
+- `.avm` format: `AVM1` magic, typed constants (int/string/bool), code bytes — stable for simple sharing.
+- This phase prioritizes visibility and portability of execution; loops, spells, and collections in AVM are slated next.
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.
