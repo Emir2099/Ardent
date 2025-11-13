@@ -14,6 +14,8 @@
 #include "avm/opcode.h"
 #include "avm/bytecode.h"
 #include "avm/vm.h"
+#include "avm/compiler_avm.h"
+#include "avm/disassembler.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -208,7 +210,12 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
 int main(int argc, char** argv) {
     // Oracle mode: --oracle or -o, optional --color / --no-color, --emoji / --no-emoji
     bool wantOracle = false;
+    bool wantVmRepl = false; // AVM REPL: compile each line, retain globals
     bool vmDemo = false;   // run minimal AVM demo with hand-authored bytecode
+    bool vmMode = false;   // compile provided scroll (or demo) to bytecode & run
+    bool vmDisasm = false; // compile and disassemble the bytecode or disassemble a .avm file
+    bool vmSaveAvm = false; // when compiling, save the chunk to a .avm file
+    std::string vmSavePath;
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
@@ -216,7 +223,11 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--oracle" || arg == "-o") wantOracle = true;
+        else if (arg == "--vm-repl") wantVmRepl = true;
         else if (arg == "--vm-demo") vmDemo = true;
+        else if (arg == "--vm") vmMode = true;
+        else if (arg == "--disassemble" || arg == "--vm-disasm") vmDisasm = true;
+        else if (arg == "--save-avm" && i + 1 < argc) { vmSaveAvm = true; vmSavePath = argv[++i]; }
         else if (arg == "--color") colorize = true;
         else if (arg == "--no-color") colorize = false;
         else if (arg == "--emoji") emoji = true;
@@ -226,6 +237,48 @@ int main(int argc, char** argv) {
     }
     if (wantOracle) {
         startOracleMode(colorize, emoji, poetic);
+        return 0;
+    }
+
+    if (wantVmRepl) {
+        // Lightweight AVM REPL: compiles each line to bytecode and runs on a persistent VM
+        // No auto-printing; use proclamations to print results.
+        initWindowsConsole(colorize || emoji);
+        avm::CompilerAVM cavm; // persists symbol table across lines
+        avm::VM vm;            // persists global slots across lines
+        if (colorize) {
+            std::cout << "\x1b[92m** Ardent AVM REPL **\x1b[0m" << std::endl;
+            std::cout << "\x1b[90;3mType 'exit' or 'farewell' to leave.\x1b[0m" << std::endl;
+        } else {
+            std::cout << "** Ardent AVM REPL **" << std::endl;
+            std::cout << "Type 'exit' or 'farewell' to leave." << std::endl;
+        }
+        while (true) {
+            if (emoji) {
+                if (colorize) std::cout << "\n\x1b[96m✒️ \x1b[0m "; else std::cout << "\n✒️ ";
+            } else {
+                if (colorize) std::cout << "\n\x1b[96m> \x1b[0m"; else std::cout << "\n> ";
+            }
+            std::string line;
+            if (!std::getline(std::cin, line)) break;
+            if (line == "farewell" || line == "exit") break;
+            if (line.empty()) continue;
+            try {
+                Lexer lx(line);
+                auto toks = lx.tokenize();
+                Arena astArena; // ephemeral AST arena per line
+                Parser parser(std::move(toks), &astArena);
+                auto ast = parser.parse();
+                if (!ast) continue;
+                avm::Chunk chunk = cavm.compile(ast);
+                auto res = vm.run(chunk);
+                if (!res.ok && colorize) std::cerr << "\x1b[90;3m<execution error>\x1b[0m" << std::endl;
+                else if (!res.ok) std::cerr << "<execution error>" << std::endl;
+            } catch (const std::exception& e) {
+                if (colorize) std::cerr << "\x1b[90;3m" << e.what() << "\x1b[0m" << std::endl;
+                else std::cerr << e.what() << std::endl;
+            }
+        }
         return 0;
     }
 
@@ -267,6 +320,84 @@ int main(int argc, char** argv) {
         avm::VM vm;
         auto res = vm.run(chunk);
         return res.ok ? 0 : 1;
+    }
+
+    if (vmMode || vmDisasm) {
+        // Determine if the user passed a path argument (could be .avm or source scroll)
+        std::string argPath;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') { argPath = argv[i]; break; }
+            // skip parameter for --save-avm
+            if ((std::string)argv[i] == std::string("--save-avm")) ++i;
+        }
+
+        // If disassembling and given a .avm file, load and dump it.
+        if (vmDisasm && !argPath.empty()) {
+            if (avm_io::is_avm_file(argPath)) {
+                avm::Chunk loaded;
+                if (!avm_io::load_chunk(argPath, loaded)) {
+                    std::cerr << "Failed to load AVM file: " << argPath << std::endl;
+                    return 1;
+                }
+                std::cout << avm::disassemble(loaded);
+                return 0;
+            }
+        }
+
+        // Else compile source: from file if provided or from built-in demo input.
+        std::string source;
+        if (!argPath.empty()) {
+            std::ifstream f(argPath);
+            if (!f.is_open()) {
+                std::cerr << "The scroll cannot be found at this path: '" << argPath << "'." << std::endl;
+                return 1;
+            }
+            source.assign((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        } else {
+            source = "Let it be known throughout the land, a number named a is of 2 winters.\n"
+                     "Let it be known throughout the land, a number named b is of 3 winters.\n"
+                     "Should the fates decree that a is greater than b then Let it be proclaimed: \"gt\" Else whisper \"le\"\n"
+                     "Let it be known throughout the land, a phrase named p is of \"apple\".\n"
+                     "Let it be known throughout the land, a phrase named q is of \"banana\".\n"
+                     "Should the fates decree that p is lesser than q then Let it be proclaimed: \"lex-true\" Else whisper \"lex-false\"\n"
+                     "Let it be proclaimed: a + b";
+        }
+        Lexer lx(source);
+        auto toks = lx.tokenize();
+        Arena astArena;
+        Parser parser(std::move(toks), &astArena);
+        auto ast = parser.parse();
+        if (!ast) {
+            std::cerr << "Error: Parser returned NULL AST!" << std::endl;
+            return 1;
+        }
+        avm::CompilerAVM cavm;
+        avm::Chunk chunk = cavm.compile(ast);
+        if (vmSaveAvm && !vmSavePath.empty()) {
+            if (!avm_io::save_chunk(chunk, vmSavePath)) {
+                std::cerr << "Failed to save AVM file to '" << vmSavePath << "'" << std::endl;
+            }
+        }
+        if (vmDisasm) {
+            std::string listing = avm::disassemble(chunk);
+            std::cout << listing;
+            return 0;
+        } else {
+            // If vmMode and user provided a .avm path, prefer loading and running it instead of compiled chunk
+            if (!argPath.empty() && avm_io::is_avm_file(argPath)) {
+                avm::Chunk loaded;
+                if (!avm_io::load_chunk(argPath, loaded)) {
+                    std::cerr << "Failed to load AVM file: " << argPath << std::endl;
+                    return 1;
+                }
+                avm::VM vm;
+                auto res = vm.run(loaded);
+                return res.ok ? 0 : 1;
+            }
+            avm::VM vm;
+            auto res = vm.run(chunk);
+            return res.ok ? 0 : 1;
+        }
     }
 
     // Scroll mode: ardent <path> (only when first non-flag argument is a path)

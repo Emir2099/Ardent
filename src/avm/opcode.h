@@ -25,6 +25,14 @@ enum class OpCode : uint8_t {
     OP_OR  = 0x25,
     OP_NOT = 0x26,
 
+    // Comparisons
+    OP_EQ  = 0x27,
+    OP_NE  = 0x28,
+    OP_GT  = 0x29,
+    OP_LT  = 0x2A,
+    OP_GE  = 0x2B,
+    OP_LE  = 0x2C,
+
     // Control Flow
     OP_JMP = 0x30,          // u16: rel offset
     OP_JMP_IF_FALSE = 0x31, // u16: rel offset
