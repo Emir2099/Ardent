@@ -20,3 +20,34 @@ dbg.exe
 ardent_demo.exe
 ROADMAP.md
 validator_output.txt
+ardent_vm.exe
+ardent_avm_demo.exe
+
+### Release & packaging artifacts
+deliverables_*/
+deliverables_1_3/
+ardent-*.zip
+ardent-*.tar.gz
+SHA256SUMS.txt
+
+### Cross-platform built binaries (without extensions)
+/ardent
+/ardentc
+/oracle
+
+### Build directories
+build/
+build-*/
+cmake-build-*/
+
+### Debug symbols & metadata
+*.dSYM/
+*.stackdump
+
+### Misc system/editor cruft
+.DS_Store
+Thumbs.db
+
+### Additional logs
+ardent_scroll.log
+
