@@ -14,7 +14,6 @@
 // Shared caches/guards for module system across nested interpreters
 #include "token.h"
 #include "arena.h"
-static std::unordered_map<std::string, bool> g_importing;
 
 // ===== Line arena lifecycle and promotion (after includes for full type visibility) =====
 Interpreter::Value Interpreter::promoteToGlobal(const Value& v) {
@@ -963,7 +962,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
     }
     else if (auto impAll = std::dynamic_pointer_cast<ImportAll>(ast)) {
-        Module m = loadModule(impAll->path);
+        Module m = loadModuleLogical(impAll->path);
         if (!impAll->alias.empty()) {
             for (const auto &p : m.spells) {
                 registerSpell(impAll->alias + "." + p.first, p.second);
@@ -980,7 +979,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
     }
     else if (auto impSel = std::dynamic_pointer_cast<ImportSelective>(ast)) {
-        Module m = loadModule(impSel->path);
+        Module m = loadModuleLogical(impSel->path);
         for (const auto &name : impSel->names) {
             auto it = m.spells.find(name);
             if (it == m.spells.end()) {
@@ -991,22 +990,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
     }
     else if (auto unfurl = std::dynamic_pointer_cast<UnfurlInclude>(ast)) {
-        // Inline include: read, parse, and execute in current context
-        std::error_code ec;
-        if (!std::filesystem::exists(unfurl->path, ec)) {
-            std::cerr << "The scroll cannot be found at this path: '" << unfurl->path << "'." << std::endl;
-            return;
-        }
-        std::ifstream in(unfurl->path);
-        if (!in) { std::cerr << "The scroll cannot be found at this path: '" << unfurl->path << "'." << std::endl; return; }
-        std::stringstream buffer; buffer << in.rdbuf();
-    Lexer lx(buffer.str());
-    auto toks = lx.tokenize();
-    Arena astArena; // ephemeral arena for included scroll parse
-    Parser p(std::move(toks), &astArena);
-        auto otherAst = p.parse();
-        if (!otherAst) return;
-        execute(otherAst);
+        (void)loadModuleLogical(unfurl->path); // executed during load
     }
     else if (auto spellDef = std::dynamic_pointer_cast<SpellStatement>(ast)) {
         // Register spell
@@ -1385,7 +1369,7 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
 
 Interpreter::Module Interpreter::loadModule(const std::string& path) {
     // Circular import guard
-    if (g_importing[path]) {
+    if (importing[path]) {
         std::cerr << "The scroll '" << path << "' folds upon itself — circular invocation forbidden." << std::endl;
         return Module{};
     }
@@ -1408,15 +1392,35 @@ Interpreter::Module Interpreter::loadModule(const std::string& path) {
     Parser p(std::move(toks), &globalArena_);
     auto ast = p.parse();
     if (!ast) return Module{};
-    g_importing[path] = true;
+    importing[path] = true;
     // Execute directly; declarations land in global scope, spells registered here
     execute(ast);
-    g_importing.erase(path);
+    importing.erase(path);
     Module m;
     m.variables = scopes.front(); // snapshot of global variables (may include pre-existing ones)
     m.spells = spells;            // all spells currently registered
     moduleCache[path] = m;
     return m;
+}
+
+Interpreter::Module Interpreter::loadModuleLogical(const std::string& logicalName) {
+    // First try to resolve logical name via Scroll Loader
+    auto res = scrolls::resolve(logicalName);
+    if (!res.found) {
+        std::cerr << "The scroll \"" << logicalName << "\" could not be found among the libraries of men." << std::endl;
+        return Module{};
+    }
+    // Prefer .avm if exists alongside .ardent: replace extension and check
+    std::filesystem::path p(res.path);
+    std::filesystem::path avmPath = p;
+    avmPath.replace_extension(".avm");
+    std::error_code ec;
+    if (std::filesystem::exists(avmPath, ec)) {
+        // Attempt to load bytecode chunk quickly (placeholder: we would integrate with VM later)
+        // For now, just fall back to source path until AVM module linking is implemented.
+        return loadModule(p.string());
+    }
+    return loadModule(p.string());
 }
 
 // ===== REPL helpers =====

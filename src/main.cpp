@@ -16,6 +16,8 @@
 #include "avm/vm.h"
 #include "avm/compiler_avm.h"
 #include "avm/disassembler.h"
+#include "version.h"
+#include "scroll_loader.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -211,6 +213,18 @@ int main(int argc, char** argv) {
     // Oracle mode: --oracle or -o, optional --color / --no-color, --emoji / --no-emoji
     bool wantOracle = false;
     bool wantVmRepl = false; // AVM REPL: compile each line, retain globals
+    bool wantReplAlias = false; // --repl alias for VM REPL
+    bool printVersion = false;
+    bool compileOnly = false; // --compile
+    std::string compileOutPath; // -o path for compile
+    bool interpretMode = false; // --interpret
+    bool bannerOnly = false; // --banner
+    bool wantHelp = false; // --help
+    bool wantBench = false; // --bench
+    bool wantLint = false; // --lint
+    bool wantPretty = false; // --pretty
+    bool wantScrollList = false; // --scrolls list available stdlib scrolls
+    bool wantDemo = false; // --demo run a short poetic sample
     bool vmDemo = false;   // run minimal AVM demo with hand-authored bytecode
     bool vmMode = false;   // compile provided scroll (or demo) to bytecode & run
     bool vmDisasm = false; // compile and disassemble the bytecode or disassemble a .avm file
@@ -224,6 +238,18 @@ int main(int argc, char** argv) {
         std::string arg = argv[i];
         if (arg == "--oracle" || arg == "-o") wantOracle = true;
         else if (arg == "--vm-repl") wantVmRepl = true;
+        else if (arg == "--repl") { wantVmRepl = true; wantReplAlias = true; }
+        else if (arg == "--version") printVersion = true;
+        else if (arg == "--compile") compileOnly = true;
+        else if (arg == "-o" && i + 1 < argc) { compileOutPath = argv[++i]; }
+        else if (arg == "--interpret") interpretMode = true;
+        else if (arg == "--banner") bannerOnly = true;
+        else if (arg == "--help") wantHelp = true;
+        else if (arg == "--bench") wantBench = true;
+        else if (arg == "--lint") wantLint = true;
+        else if (arg == "--pretty") wantPretty = true;
+        else if (arg == "--scrolls") wantScrollList = true;
+        else if (arg == "--demo") wantDemo = true;
         else if (arg == "--vm-demo") vmDemo = true;
         else if (arg == "--vm") vmMode = true;
         else if (arg == "--disassemble" || arg == "--vm-disasm") vmDisasm = true;
@@ -235,6 +261,169 @@ int main(int argc, char** argv) {
         else if (arg == "--poetic") poetic = true;
         else if (arg == "--chronicles-demo") chroniclesOnly = true;
     }
+    if (printVersion) {
+        initWindowsConsole(true);
+        std::cout << "Ardent " << ARDENT_VERSION << " — \"" << ARDENT_CODENAME << "\"\n";
+        std::cout << "Forged with poetic precision on " << ARDENT_BUILD_DATE << "\n";
+        std::cout << "Commit: " << ARDENT_BUILD_HASH << "\n";
+        return 0;
+    }
+
+    if (bannerOnly) {
+        initWindowsConsole(true);
+        // Simplified, unambiguous banner (avoid misreading as ONANET in some fonts)
+        std::cout << "========================================\n";
+        std::cout << "              A R D E N T               \n";
+        std::cout << "========================================\n";
+        std::cout << "Version: " << ARDENT_VERSION << "  Codename: \"" << ARDENT_CODENAME << "\"\n";
+        std::cout << "Build Date: " << ARDENT_BUILD_DATE << "  Commit: " << ARDENT_BUILD_HASH << "\n";
+        return 0;
+    }
+
+    if (wantHelp) {
+        std::cout << "Usage: ardent [mode] [flags] [file]\n";
+        std::cout << "  --interpret <file>   Interpret a source scroll in classic mode.\n";
+        std::cout << "  --compile -o out.avm <file>  Compile scroll to bytecode (.avm).\n";
+        std::cout << "  --vm <file|.avm>     Run in the Virtual Ember (compile or load).\n";
+        std::cout << "  --repl / --oracle    Poetic interactive REPL.\n";
+        std::cout << "  --disassemble <file|.avm>  Show bytecode listing.\n";
+        std::cout << "  --bench              Measure the swiftness of your spells.\n";
+        std::cout << "  --lint               Inspect scrolls for structural blemishes.\n";
+        std::cout << "  --pretty             Beautify and reindent Ardent verses.\n";
+        std::cout << "  --scrolls            List available standard library scrolls.\n";
+        std::cout << "  --demo               Run a brief poetic showcase.\n";
+        std::cout << "  --banner             Print logo + version only.\n";
+        std::cout << "  --version            Display Ardent version and codename.\n";
+        return 0;
+    }
+    if (wantBench) {
+        // Micro benchmarks: phrase concat, arithmetic loop, dummy spell call simulation
+        using clock = std::chrono::high_resolution_clock;
+        struct BenchResult { std::string label; long long micros; std::string note; };
+        std::vector<BenchResult> results;
+        auto runBench = [&](const std::string& label, const std::string& note, auto fn){
+            auto start = clock::now(); fn(); auto end = clock::now();
+            auto us = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
+            results.push_back({label, us, note});
+        };
+        runBench("phrase-concat", "2000 joins", [](){ std::string s; s.reserve(8192); for(int i=0;i<2000;++i) s += "Ardent"; });
+        runBench("arithmetic-loop", "200k iters", [](){ volatile int acc=0; for(int i=0;i<200000;++i) acc += i%7; });
+        runBench("dummy-spell-invokes", "50k calls", [](){ for(int i=0;i<50000;++i) { /* simulate */ } });
+        std::cout << "Benchmark Results (Ardent " << ARDENT_VERSION << ")\n";
+        std::cout << "-------------------------------------------\n";
+        for (auto &r : results) {
+            double ms = r.micros / 1000.0; // convert to milliseconds
+            std::cout.setf(std::ios::fixed); std::cout.precision(3);
+            std::cout << "  " << std::left << std::setw(22) << r.label
+                      << std::right << std::setw(9) << ms << " ms  "
+                      << std::left << std::setw(14) << r.note << "\n";
+        }
+        return 0;
+    }
+
+    if (wantScrollList) {
+        std::cout << "Available scroll roots:\n";
+        auto roots = scrolls::candidateRoots();
+        for (auto &r : roots) {
+            std::error_code ec; if (!std::filesystem::exists(r, ec)) continue;
+            std::cout << "  Root: " << r << "\n";
+            int count=0;
+            for (auto &entry : std::filesystem::directory_iterator(r, ec)) {
+                if (ec) break; if (!entry.is_regular_file()) continue;
+                auto p = entry.path(); auto ext = p.extension().string();
+                if (ext == ".ardent" || ext == ".avm") {
+                    std::cout << "    - " << p.filename().string();
+                    if (ext == ".avm") std::cout << " (bytecode)";
+                    std::cout << '\n'; ++count;
+                }
+            }
+            if (count == 0) std::cout << "    (none found)\n";
+        }
+        return 0;
+    }
+
+    if (wantDemo) {
+        std::string demo =
+            "Let it be proclaimed: \"--- Ardent Demo ---\"\n"
+            "Let it be known throughout the land, a phrase named hero is of \"Aragorn\".\n"
+            "By decree of the elders, a spell named hail is cast upon a traveler known as name:\n"
+            "    Let it be proclaimed: \"Hail, noble \" + name + \"!\"\n"
+            "Invoke the spell hail upon hero\n"
+            "Let it be known throughout the land, a number named a is of 2 winters.\n"
+            "Let it be known throughout the land, a number named b is of 3 winters.\n"
+            "Should the fates decree that a is lesser than b then Let it be proclaimed: \"a<b\" Else whisper \"a>=b\"\n"
+            "Inscribe upon \"demo.txt\" the words \"A tale begins.\"\n"
+            "Let it be known throughout the land, a phrase named lines is of reading from \"demo.txt\".\n"
+            "Let it be proclaimed: lines\n"
+            "Banish the scroll \"demo.txt\".\n";
+        runArdentProgram(demo);
+        return 0;
+    }
+
+    if (wantLint) {
+        std::string path;
+        for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        if (path.empty()) { std::cerr << "Provide a scroll path for linting." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Lexer lx(source); auto toks = lx.tokenize();
+        Arena astArena; Parser parser(std::move(toks), &astArena); auto ast = parser.parse();
+        if (!ast) { std::cerr << "Lint: parse failed." << std::endl; return 1; }
+        // Simple warnings: repeated variable declarations & missing proclaimed punctuation
+        std::unordered_map<std::string,int> declCount;
+        std::function<void(std::shared_ptr<ASTNode>)> walk = [&](std::shared_ptr<ASTNode> n){
+            if (!n) return; 
+            if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                if (bin->op.type == TokenType::IS_OF) {
+                    if (auto lhs = std::dynamic_pointer_cast<Expression>(bin->left)) {
+                        declCount[lhs->token.value]++;
+                    }
+                }
+                walk(bin->left); walk(bin->right);
+            } else if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
+                for (auto &s : blk->statements) walk(s);
+            } else if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) {
+                // Heuristic: warn if phrase literal not ending with punctuation
+                if (auto ex = std::dynamic_pointer_cast<Expression>(pr->expression)) {
+                    if (ex->token.type == TokenType::STRING) {
+                        const std::string &val = ex->token.value;
+                        if (!val.empty() && val.back() != '.' && val.back() != '!' && val.back() != '?' ) {
+                            std::cout << "Lint warning: proclamation string lacks terminal flourish: '" << val << "'\n";
+                        }
+                    }
+                }
+                walk(pr->expression);
+            } else if (auto un = std::dynamic_pointer_cast<UnaryExpression>(n)) { walk(un->operand); }
+            else if (auto cast = std::dynamic_pointer_cast<CastExpression>(n)) { walk(cast->operand); }
+            else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) { walk(ifs->condition); walk(ifs->thenBranch); walk(ifs->elseBranch); }
+        };
+        walk(ast);
+        for (auto &kv : declCount) if (kv.second > 1) std::cout << "Lint warning: variable '" << kv.first << "' declared " << kv.second << " times." << std::endl;
+        std::cout << "Lint completed." << std::endl;
+        return 0;
+    }
+
+    if (wantPretty) {
+        std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        if (path.empty()) { std::cerr << "Provide a scroll path for pretty printing." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Lexer lx(source); auto toks = lx.tokenize(); Arena astArena; Parser parser(std::move(toks), &astArena); auto ast = parser.parse(); if (!ast) { std::cerr << "Pretty: parse failed." << std::endl; return 1; }
+        // Naive pretty printer: re-walk and indent blocks
+        int indent = 0; std::function<void(std::shared_ptr<ASTNode>)> pp = [&](std::shared_ptr<ASTNode> n){
+            if (!n) return; auto pad=[&](){ for(int i=0;i<indent;++i) std::cout << "    "; };
+            if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
+                for (auto &s : blk->statements) { pp(s); }
+            } else if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) {
+                pad(); std::cout << "Let it be proclaimed: <expr>" << std::endl; // placeholder
+            } else if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                pad(); std::cout << "<bin expr>" << std::endl; pp(bin->left); pp(bin->right);
+            } else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) {
+                pad(); std::cout << "Should the fates decree <condition> then" << std::endl; indent++; pp(ifs->thenBranch); indent--; pad(); std::cout << "Else" << std::endl; indent++; pp(ifs->elseBranch); indent--; 
+            }
+        }; pp(ast); return 0;
+    }
+
     if (wantOracle) {
         startOracleMode(colorize, emoji, poetic);
         return 0;
@@ -320,6 +509,46 @@ int main(int argc, char** argv) {
         avm::VM vm;
         auto res = vm.run(chunk);
         return res.ok ? 0 : 1;
+    }
+
+    if (interpretMode) {
+        // Scroll mode through interpreter: ardent --interpret <path>
+        std::string path;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') { path = argv[i]; break; }
+            if ((std::string)argv[i] == std::string("-o") || (std::string)argv[i] == std::string("--save-avm")) ++i;
+        }
+        if (path.empty()) { std::cerr << "Provide a scroll path: ardent --interpret <file>\n"; return 1; }
+        std::ifstream f(path);
+        if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'.\n"; return 1; }
+        std::string code((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        runArdentProgram(code);
+        return 0;
+    }
+
+    if (compileOnly && !vmDisasm) {
+        // Compile source to .avm and exit: ardent --compile -o out.avm <scroll>
+        std::string argPath;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') { argPath = argv[i]; break; }
+            if ((std::string)argv[i] == std::string("-o") || (std::string)argv[i] == std::string("--save-avm")) ++i;
+        }
+        if (compileOutPath.empty()) { std::cerr << "Missing output path: use -o <file.avm> with --compile\n"; return 1; }
+        if (argPath.empty()) { std::cerr << "Provide a scroll path: ardent --compile -o out.avm <file>\n"; return 1; }
+        std::ifstream f(argPath);
+        if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << argPath << "'.\n"; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        Lexer lx(source);
+        auto toks = lx.tokenize();
+        Arena astArena;
+        Parser parser(std::move(toks), &astArena);
+        auto ast = parser.parse();
+        if (!ast) { std::cerr << "Error: Parser returned NULL AST!\n"; return 1; }
+        avm::CompilerAVM cavm;
+        avm::Chunk chunk = cavm.compile(ast);
+        if (!avm_io::save_chunk(chunk, compileOutPath)) { std::cerr << "Failed to save AVM file to '" << compileOutPath << "'\n"; return 1; }
+        std::cout << "Compiled \"" << argPath << "\" into " << chunk.code.size() << " bytes of bytecode.\n";
+        return 0;
     }
 
     if (vmMode || vmDisasm) {

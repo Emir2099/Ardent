@@ -5,6 +5,8 @@
 #include <variant>
 #include <vector>
 #include <functional>
+#include <filesystem>
+#include "scroll_loader.h"
 #include "ast.h"
 #include "arena.h"
 #include "env.h"
@@ -60,6 +62,7 @@ private:
     std::unordered_map<std::string, Module> moduleCache;
     std::unordered_map<std::string, bool> importing;
     Module loadModule(const std::string& path);
+    Module loadModuleLogical(const std::string& logicalName);
     // Native functions
     std::unordered_map<std::string, NativeFunc> nativeRegistry;
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 

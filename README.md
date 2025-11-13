@@ -376,13 +376,73 @@ All current behavioral tests: `73 passed, 0 failed` — includes literals, colle
 
 ---
 
+## 🪄 Ardent 1.3 — “The Scholar’s Ink”
+
+When the poet’s craft becomes a scholar’s tool.
+
+### What’s New
+- Unified CLI launcher with clear modes and tooling.
+- Scroll Loader for logical imports with sensible roots.
+- Utility flags for developer workflows and demos.
+- Packaging and install scripts for system-style layouts.
+
+### Unified CLI
+- `--version` prints version banner and build info.
+- `--interpret <file>` runs the classic interpreter.
+- `--compile -o out.avm <file>` emits AVM bytecode.
+- `--vm <file|.avm>` compiles or loads and runs on the VM.
+- `--repl` / `--oracle` starts an interactive REPL.
+- `--disassemble <file|.avm>` shows a mnemonic listing.
+- `--bench` runs micro-benchmarks with readable timing.
+- `--lint` warns on simple style/structure issues.
+- `--pretty` formats scrolls to a canonical layout (stub).
+- `--banner` prints a clean banner (screenshot-friendly).
+- `--scrolls` lists available stdlib scrolls.
+- `--demo` runs a short poetic showcase.
+
+### Scroll Loader (Stdlib Autoload)
+- Search roots (fallback order):
+    - `./scrolls/`
+    - `$ARDENT_HOME/scrolls/`
+    - `/usr/local/lib/ardent/scrolls/` (Windows equivalent under `%ProgramFiles%\Ardent\scrolls`)
+- Logical imports like `From the scroll of "chronicles"…` resolve without explicit paths.
+- Friendly errors for missing scrolls.
+- Bytecode preference planned: load `.avm` when present alongside source.
+
+### Packaging & Install
+- CMake install target places:
+    - `bin/ardent`, `bin/ardentc`, `bin/oracle`
+    - `lib/ardent/scrolls/`
+    - `share/ardent/examples/`
+- Scripts: `install.sh` (Unix/macOS) and `install.bat` (Windows).
+- Installer message: “The Scholar’s Ink now flows through your system.”
+
+### Versioning
+- Embedded macros (see `src/version.h`):
+    - `ARDENT_VERSION`, `ARDENT_CODENAME`, `ARDENT_BUILD_DATE`, `ARDENT_BUILD_HASH`.
+- Shown in `--version`, `--banner`, and installer output.
+
+### Quick Start
+- Run the demo:
+    - `./ardent_vm.exe --demo`
+- List stdlib scrolls:
+    - `./ardent_vm.exe --scrolls`
+- Compile to AVM and run:
+    - `./ardent_vm.exe --compile -o saga.avm saga.ardent`
+    - `./ardent_vm.exe --vm saga.avm`
+
+### Notes
+- REPL hot-reload (from 1.2) persists globals; CLI now exposes `--repl`.
+- Pretty-printer and linter are minimal stubs intended for iterative refinement.
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.
 > Where others run code, we recite creation."
 
-Ardent 1.0 – Interpreter’s Flame stands complete.
-A bridge between artistry and algorithm.
+Ardent – A bridge between artistry and algorithm.
 A whisper to all who believe code can be beautiful.
 
 <p align="center">
