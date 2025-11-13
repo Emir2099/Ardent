@@ -286,6 +286,52 @@ Notes:
 
 ---
 
+## 🚀 Phase 1.1 – Lightweight Allocator & Memory Discipline
+
+> Establishing the foundation for performance, predictability, and future language evolution.
+
+### Summary
+Phase 1.1 introduces a disciplined memory model centered on a lightweight bump‑pointer arena with scoped frames. All transient language structures now allocate from explicit arenas, eliminating fragmentation and reducing lifetime ambiguity. This sets the stage for future optimization phases without sacrificing the poetic surface of the language.
+
+### Key Advancements
+- **Bump Arena + Frames:** Fast linear allocation with `pushFrame()/popFrame()` for precise lifetime control.
+- **Phrase SSO:** Small strings stored inline; larger phrases promoted into the active arena — zero heap churn for ephemeral text.
+- **Arena‑Backed AST:** All nodes constructed via placement helpers (`node<T>`) eliminating `shared_ptr` overhead.
+- **Scoped Environment Stack:** Each scope uses an arena‑allocated hash table; entry lifetimes tied to frames.
+- **Immutable Collections:** `Order` (sequential) and `Tome` (key/value) are snapshot structures — stable iteration, copy‑on‑write mutation rites.
+- **Copy‑on‑Write Rites:** `expand/remove` (Order) and `amend/erase` (Tome) build fresh snapshots in the active arena; no in‑place mutation.
+- **Dual REPL Arenas:** `globalArena_` (persistent) and `lineArena_` (ephemeral) with promotion of “touched” values per input line.
+- **Import Lifetime Fix:** Modules parsed/executed in the interpreter’s global arena; no dangling interpreter states.
+- **Unified Printing Semantics:** Phrases, Orders, and Tomes render consistently through `formatValue()`; raw phrase output (no extraneous quoting).
+- **Test Suite Stability:** All 73 validator cases pass, establishing a correctness baseline.
+
+### Memory Model Overview
+| Layer | Purpose |
+| --- | --- |
+| Global Arena | Long‑lived program/runtime state (persisted values, imported definitions). |
+| Line Arena | Ephemeral REPL evaluation workspace reused each input. |
+| Frames | Fine‑grained lifetime scoping: pushed for blocks / evaluation phases. |
+
+Allocation Principle: “If it won’t outlive the current evaluation frame, it belongs in the current arena — never on the general heap.”
+
+### Promotion Semantics
+During REPL input: `beginLine()` opens a fresh frame on `lineArena_`; any value referenced outside its ephemeral context is marked and later **promoted** into `globalArena_` during `endLine()`. Untouched temporaries are discarded en masse.
+
+### Immutable Collections
+Orders and Tomes store flat, arena‑linear memory blocks. Mutation rites allocate new blocks; previous snapshots remain valid for any active readers. This approach prepares future structural sharing or persistent index overlays without API change.
+
+### Contributor Guidelines (Phase 1.1 Discipline)
+- Use `activeArena()` for all transient allocations (AST nodes, large phrases, collection snapshots).
+- Avoid raw `new/delete`; prefer arena placement helpers.
+- Do not mutate an existing Order/Tome in place — always perform a rite that constructs a new snapshot.
+- Use `assignVariableAny` for environment updates to ensure scope consistency.
+- Keep Phrase concatenation arena‑local; avoid constructing intermediate `std::string` unless required by an external interface.
+
+### Validation Status
+All current behavioral tests: `73 passed, 0 failed` — includes literals, collection rites, imports, phrase formatting, and REPL lifecycle.
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.
