@@ -11,6 +11,9 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include "avm/opcode.h"
+#include "avm/bytecode.h"
+#include "avm/vm.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
@@ -205,6 +208,7 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
 int main(int argc, char** argv) {
     // Oracle mode: --oracle or -o, optional --color / --no-color, --emoji / --no-emoji
     bool wantOracle = false;
+    bool vmDemo = false;   // run minimal AVM demo with hand-authored bytecode
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
@@ -212,6 +216,7 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--oracle" || arg == "-o") wantOracle = true;
+        else if (arg == "--vm-demo") vmDemo = true;
         else if (arg == "--color") colorize = true;
         else if (arg == "--no-color") colorize = false;
         else if (arg == "--emoji") emoji = true;
@@ -245,6 +250,23 @@ int main(int argc, char** argv) {
         )ARDENT";
         runArdentProgram(chronicles);
         return 0;
+    }
+
+    // Minimal AVM demo: showcase bytecode scaffolding without compiler
+    if (vmDemo) {
+        // Program: print (2 + 3) and halt
+        avm::BytecodeEmitter em;
+        uint16_t c2 = em.addConst(2);
+        uint16_t c3 = em.addConst(3);
+        em.emit(avm::OpCode::OP_PUSH_CONST); em.emit_u16(c2);
+        em.emit(avm::OpCode::OP_PUSH_CONST); em.emit_u16(c3);
+        em.emit(avm::OpCode::OP_ADD);
+        em.emit(avm::OpCode::OP_PRINT);
+        em.emit(avm::OpCode::OP_HALT);
+        avm::Chunk chunk = em.build();
+        avm::VM vm;
+        auto res = vm.run(chunk);
+        return res.ok ? 0 : 1;
     }
 
     // Scroll mode: ardent <path> (only when first non-flag argument is a path)
