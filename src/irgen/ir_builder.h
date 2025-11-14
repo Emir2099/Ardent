@@ -15,19 +15,11 @@ namespace ardent::irgen {
 struct IRBuildResult {
     bool ok{false};
     std::string error;
-#ifdef ARDENT_ENABLE_LLVM
-    std::shared_ptr<llvm::Module> module;
-#endif
 };
 
-class IRBuilderFacade {
-public:
-    IRBuilderFacade();
 #ifdef ARDENT_ENABLE_LLVM
-    llvm::LLVMContext &context();
+// Build a demo module returning ardent_rt_add(2,3)
+std::unique_ptr<llvm::Module> build_demo_add_module(llvm::LLVMContext &ctx);
 #endif
-    // Build IR from a high-level placeholder (later AST root)
-    IRBuildResult buildDemoAddFunction();
-};
 
 } // namespace ardent::irgen
