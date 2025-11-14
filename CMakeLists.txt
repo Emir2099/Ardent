@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ARDENT_BUILD_RELEASE "Build with -O2" ON)
+option(ARDENT_ENABLE_LLVM "Enable experimental LLVM-based IR/JIT (Ardent 2.0 work)" OFF)
 
 if(ARDENT_BUILD_RELEASE)
   if(NOT CMAKE_BUILD_TYPE)
@@ -19,6 +20,29 @@ add_executable(ardent
   src/parser.cpp
   src/interpreter.cpp
   src/scroll_loader.cpp)
+
+# Experimental IRGen / Runtime (Ardent 2.0) -- only built if LLVM enabled
+if(ARDENT_ENABLE_LLVM)
+  find_package(LLVM QUIET CONFIG)
+  if(LLVM_FOUND)
+    message(STATUS "LLVM found: ${LLVM_PACKAGE_VERSION}")
+    message(STATUS "LLVM include dirs: ${LLVM_INCLUDE_DIRS}")
+    add_library(ardent_irgen STATIC
+      src/irgen/ir_builder.cpp)
+    target_include_directories(ardent_irgen PRIVATE ${LLVM_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(ardent_irgen PRIVATE ARDENT_ENABLE_LLVM)
+    # Link components we may need minimally (Core, Support)
+    if(TARGET LLVM::Core)
+      target_link_libraries(ardent_irgen PRIVATE LLVM::Core LLVM::Support)
+    endif()
+    add_library(ardent_runtime STATIC src/runtime/ardent_runtime.cpp)
+    target_include_directories(ardent_runtime PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(ardent_runtime PRIVATE ARDENT_ENABLE_LLVM)
+    target_link_libraries(ardent PRIVATE ardent_irgen ardent_runtime)
+  else()
+    message(WARNING "ARDENT_ENABLE_LLVM=ON but LLVM not found; skipping IRGen build.")
+  endif()
+endif()
 
 # Header search paths (allow includes from src/ and src/avm/)
 target_include_directories(ardent PRIVATE
