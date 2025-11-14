@@ -11,6 +11,10 @@
 #include <chrono>
 #include <ctime>
 #include <iomanip>
+#include <optional>
+#include <unordered_set>
+#include <set>
+#include <cctype>
 #include "avm/opcode.h"
 #include "avm/bytecode.h"
 #include "avm/vm.h"
@@ -24,8 +28,32 @@
 #include <fcntl.h>
 #endif
 
-static void runArdentProgram(const std::string& code) {
-    Lexer lexer(code);
+// Helper to parse an optional Prologue header and strip it before lexing
+static std::string stripPrologue(const std::string& src, std::optional<ScrollPrologue>& outMeta) {
+    std::vector<std::string> lines; lines.reserve(src.size()/16+1);
+    std::string line; std::istringstream iss(src);
+    while (std::getline(iss, line)) { if (!line.empty() && line.back()=='\r') line.pop_back(); lines.push_back(line); }
+    size_t n = lines.size(); size_t i = 0;
+    while (i<n && lines[i].find_first_not_of(" \t") == std::string::npos) ++i; if (i>=n) return src;
+    std::string first = lines[i].substr(lines[i].find_first_not_of(" \t"));
+    if (first.rfind("Prologue", 0) != 0) return src;
+    ScrollPrologue meta; bool have=false; size_t j = i+1;
+    auto trim = [](std::string s){ auto s1=s.find_first_not_of(" \t"); auto e1=s.find_last_not_of(" \t"); if (s1==std::string::npos) return std::string(); return s.substr(s1, e1-s1+1); };
+    for (; j<n; ++j) {
+        const std::string &L = lines[j]; if (L.find_first_not_of(" \t") == std::string::npos) break;
+        auto pos = L.find(':'); if (pos==std::string::npos) continue; std::string k = trim(L.substr(0,pos)); std::string v = trim(L.substr(pos+1));
+        if (k=="Title") { meta.title=v; have=true; } else if (k=="Version") { meta.version=v; have=true; } else if (k=="Author") { meta.author=v; have=true; } else { meta.extras[k]=v; have=true; }
+    }
+    if (j<n && lines[j].find_first_not_of(" \t") == std::string::npos) ++j;
+    std::ostringstream out; for (size_t k=j;k<n;++k) out<<lines[k]<<"\n";
+    if (have) outMeta = meta; else outMeta.reset();
+    return out.str();
+}
+
+static void runArdentProgram(const std::string& code, const std::string& sourceName = std::string("<inline>")) {
+    std::optional<ScrollPrologue> metaOpt;
+    std::string filtered = stripPrologue(code, metaOpt);
+    Lexer lexer(filtered);
     auto tokens = lexer.tokenize();
     Arena astArena; // arena for this one-shot program parse
     Parser parser(tokens, &astArena);
@@ -35,6 +63,8 @@ static void runArdentProgram(const std::string& code) {
         return;
     }
     Interpreter interpreter;
+    interpreter.setSourceName(sourceName);
+    if (metaOpt) interpreter.setCurrentPrologue(*metaOpt);
     interpreter.execute(ast);
 }
 
@@ -77,6 +107,97 @@ static std::string nowTimestamp() {
     return oss.str();
 }
 
+// Windows interactive input with history and basic autocomplete
+#ifdef _WIN32
+static std::string readInteractiveLine(const std::string& prompt, std::vector<std::string>& history, size_t& histIndex,
+                                       const Interpreter& interp, bool colorize) {
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    DWORD origMode = 0; GetConsoleMode(hIn, &origMode);
+    SetConsoleMode(hIn, ENABLE_EXTENDED_FLAGS | ENABLE_WINDOW_INPUT | ENABLE_PROCESSED_INPUT);
+    auto printPrompt = [&](){ std::cout << prompt; };
+    printPrompt();
+    std::string buffer;
+    auto redraw = [&](){
+        std::cout << '\r' << prompt << buffer << "    ";
+        // move cursor to end
+        // no-op; cursor is at end after print
+    };
+    INPUT_RECORD rec; DWORD read = 0;
+    while (ReadConsoleInput(hIn, &rec, 1, &read)) {
+        if (rec.EventType != KEY_EVENT || !rec.Event.KeyEvent.bKeyDown) continue;
+        auto ke = rec.Event.KeyEvent;
+        WORD vk = ke.wVirtualKeyCode;
+        DWORD mods = ke.dwControlKeyState;
+        if (vk == VK_RETURN) {
+            if (mods & SHIFT_PRESSED) {
+                buffer.push_back('\n');
+                std::cout << '\n';
+                printPrompt();
+            } else {
+                std::cout << "\n";
+                if (!buffer.empty() && (history.empty() || history.back() != buffer)) {
+                    history.push_back(buffer);
+                }
+                histIndex = history.size();
+                break;
+            }
+        } else if (vk == VK_BACK) {
+            if (!buffer.empty()) {
+                buffer.pop_back();
+                std::cout << '\b' << ' ' << '\b';
+            }
+        } else if (vk == VK_TAB) {
+            // Autocomplete on last token [A-Za-z0-9_.]
+            size_t i = buffer.size();
+            while (i>0) {
+                char c = buffer[i-1];
+                if (!(std::isalnum(static_cast<unsigned char>(c)) || c=='_' || c=='.')) break;
+                --i;
+            }
+            std::string prefix = buffer.substr(i);
+            if (!prefix.empty()) {
+                std::vector<std::string> options;
+                for (auto &n : const_cast<Interpreter&>(interp).getVariableNames()) if (n.rfind(prefix,0)==0) options.push_back(n);
+                for (auto &n : const_cast<Interpreter&>(interp).getSpellNames()) if (n.rfind(prefix,0)==0) options.push_back(n);
+                if (options.size() == 1) {
+                    buffer.erase(i);
+                    buffer += options[0];
+                    redraw();
+                } else if (!options.empty()) {
+                    std::cout << "\n";
+                    for (auto &opt : options) {
+                        if (colorize) std::cout << "  \x1b[90m";
+                        std::cout << opt;
+                        if (colorize) std::cout << "\x1b[0m";
+                        std::cout << "\n";
+                    }
+                    printPrompt();
+                    std::cout << buffer;
+                }
+            }
+        } else if (vk == VK_UP) {
+            if (!history.empty() && histIndex>0) {
+                --histIndex; buffer = history[histIndex]; redraw();
+            }
+        } else if (vk == VK_DOWN) {
+            if (!history.empty() && histIndex+1 < history.size()) { ++histIndex; buffer = history[histIndex]; redraw(); }
+            else { histIndex = history.size(); buffer.clear(); redraw(); }
+        } else {
+            // Printable characters
+            wchar_t wc = ke.uChar.UnicodeChar;
+            if (wc >= 32) {
+                char utf8[4] = {0};
+                // naive ASCII-only for now
+                buffer.push_back(static_cast<char>(wc & 0xFF));
+                std::cout << static_cast<char>(wc & 0xFF);
+            }
+        }
+    }
+    SetConsoleMode(hIn, origMode);
+    return buffer;
+}
+#endif
+
 static void startOracleMode(bool colorize, bool emoji, bool poetic) {
     // Try to prepare Windows console for UTF-8 and VT; ignore failure (we'll fall back)
 #ifdef _WIN32
@@ -94,16 +215,20 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
         std::cout << "** The Oracle of Ardent **" << std::endl;
         std::cout << "Speak thy words (or say 'farewell' to depart)." << std::endl;
     }
+    std::vector<std::string> history;
+    size_t histIndex = 0;
     while (true) {
-        if (emoji) {
-            // Preferred prompt: place one space inside the colored span and one outside.
-            // Due to emoji width behavior, this yields exactly one visible gap across terminals.
-            if (colorize) std::cout << "\n\x1b[96m✒️ \x1b[0m "; else std::cout << "\n✒️ ";
-        } else {
-            if (colorize) std::cout << "\n\x1b[96m> \x1b[0m"; else std::cout << "\n> ";
-        }
+        std::string prompt;
+        if (emoji) prompt = colorize ? "\n\x1b[96m✒️ \x1b[0m " : "\n✒️ ";
+        else prompt = colorize ? "\n\x1b[96m> \x1b[0m" : "\n> ";
         std::string line;
+#ifdef _WIN32
+        line = readInteractiveLine(prompt, history, histIndex, interpreter, colorize);
+        if (!std::cin.good() && line.empty()) break;
+#else
+        std::cout << prompt;
         if (!std::getline(std::cin, line)) break;
+#endif
         // Log the verse input
         ++verse;
         if (scroll.good()) {
@@ -120,6 +245,7 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
         try {
             // Begin REPL line: enable ephemeral line arena inside the interpreter
             interpreter.beginLine();
+            interpreter.setSourceName("<repl>");
             Lexer lx(line);
             auto toks = lx.tokenize();
             // Parser uses its own ephemeral arena for AST nodes
@@ -203,13 +329,15 @@ static void startOracleMode(bool colorize, bool emoji, bool poetic) {
         } catch (const std::exception& e) {
             // Ensure we end the line even if an exception occurred
             interpreter.endLine();
-            if (colorize) std::cerr << "\x1b[90;3m" << e.what() << "\x1b[0m" << std::endl;
-            else std::cerr << e.what() << std::endl;
+            if (colorize) std::cerr << "\x1b[33m⚠️  \x1b[0m" << " " << e.what() << std::endl;
+            else std::cerr << "⚠️  " << e.what() << std::endl;
         }
     }
 }
 
 int main(int argc, char** argv) {
+    // Ensure Windows console uses UTF-8 for consistent glyph rendering
+    initWindowsConsole(true);
     // Oracle mode: --oracle or -o, optional --color / --no-color, --emoji / --no-emoji
     bool wantOracle = false;
     bool wantVmRepl = false; // AVM REPL: compile each line, retain globals
@@ -297,27 +425,40 @@ int main(int argc, char** argv) {
         return 0;
     }
     if (wantBench) {
-        // Micro benchmarks: phrase concat, arithmetic loop, dummy spell call simulation
-        using clock = std::chrono::high_resolution_clock;
-        struct BenchResult { std::string label; long long micros; std::string note; };
-        std::vector<BenchResult> results;
-        auto runBench = [&](const std::string& label, const std::string& note, auto fn){
-            auto start = clock::now(); fn(); auto end = clock::now();
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(end-start).count();
-            results.push_back({label, us, note});
+        // --bench <file>: execute scroll, measure time and arena allocations
+        std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        if (path.empty()) { std::cerr << "Provide a scroll path for benchmarking." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // Strip optional Prologue before lexing
+        std::optional<ScrollPrologue> metaOpt;
+        source = stripPrologue(source, metaOpt);
+        // Parse using a dedicated AST arena to measure AST memory
+        Lexer lx(source);
+        auto toks = lx.tokenize();
+        Arena astArena;
+        Parser parser(std::move(toks), &astArena);
+        auto ast = parser.parse();
+        if (!ast) { std::cerr << "Error: Parser returned NULL AST!" << std::endl; return 1; }
+        std::size_t astBytes = astArena.bytesUsed();
+        // Execute and time
+        Interpreter interpreter;
+        interpreter.setSourceName(path);
+        auto t0 = std::chrono::high_resolution_clock::now();
+        interpreter.execute(ast);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+        double secs = static_cast<double>(dur) / 1'000'000.0;
+        std::size_t memBytes = interpreter.bytesUsed() + astBytes;
+        // Format output
+        auto fmtBytes = [](std::size_t n) {
+            std::string s = std::to_string(n);
+            for (int i = static_cast<int>(s.size()) - 3; i > 0; i -= 3) s.insert(static_cast<std::size_t>(i), ",");
+            return s;
         };
-        runBench("phrase-concat", "2000 joins", [](){ std::string s; s.reserve(8192); for(int i=0;i<2000;++i) s += "Ardent"; });
-        runBench("arithmetic-loop", "200k iters", [](){ volatile int acc=0; for(int i=0;i<200000;++i) acc += i%7; });
-        runBench("dummy-spell-invokes", "50k calls", [](){ for(int i=0;i<50000;++i) { /* simulate */ } });
-        std::cout << "Benchmark Results (Ardent " << ARDENT_VERSION << ")\n";
-        std::cout << "-------------------------------------------\n";
-        for (auto &r : results) {
-            double ms = r.micros / 1000.0; // convert to milliseconds
-            std::cout.setf(std::ios::fixed); std::cout.precision(3);
-            std::cout << "  " << std::left << std::setw(22) << r.label
-                      << std::right << std::setw(9) << ms << " ms  "
-                      << std::left << std::setw(14) << r.note << "\n";
-        }
+        std::cout.setf(std::ios::fixed); std::cout.precision(3);
+        std::cout << "\xE2\x8F\xB3  Scroll completed in " << secs << "s\n";
+        std::cout << "Memory consumed: " << fmtBytes(memBytes) << " bytes" << std::endl;
         return 0;
     }
 
@@ -356,50 +497,188 @@ int main(int argc, char** argv) {
             "Let it be known throughout the land, a phrase named lines is of reading from \"demo.txt\".\n"
             "Let it be proclaimed: lines\n"
             "Banish the scroll \"demo.txt\".\n";
-        runArdentProgram(demo);
+        runArdentProgram(demo, "<demo>");
         return 0;
     }
 
     if (wantLint) {
-        std::string path;
-        for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        // --lint <file>: warn on unused variables/spells, unreachable branches, poetic redundancy
+        std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
         if (path.empty()) { std::cerr << "Provide a scroll path for linting." << std::endl; return 1; }
         std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
         std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // Strip optional Prologue before lexing
+        std::optional<ScrollPrologue> metaOpt;
+        source = stripPrologue(source, metaOpt);
         Lexer lx(source); auto toks = lx.tokenize();
         Arena astArena; Parser parser(std::move(toks), &astArena); auto ast = parser.parse();
         if (!ast) { std::cerr << "Lint: parse failed." << std::endl; return 1; }
-        // Simple warnings: repeated variable declarations & missing proclaimed punctuation
-        std::unordered_map<std::string,int> declCount;
-        std::function<void(std::shared_ptr<ASTNode>)> walk = [&](std::shared_ptr<ASTNode> n){
-            if (!n) return; 
+
+        struct Lint {
+            std::set<std::string> spellsDeclared;
+            std::set<std::string> spellsInvoked;
+            std::set<std::string> globalsDeclared;
+            std::set<std::string> globalsUsed;
+            std::vector<std::string> warnings;
+            // per-spell collections
+            struct SpellInfo { std::set<std::string> varsDeclared; std::set<std::string> varsUsed; };
+            std::unordered_map<std::string, SpellInfo> perSpell;
+        } L;
+
+        // Simple constexpr evaluator for if conditions
+        std::function<std::optional<long long>(std::shared_ptr<ASTNode>)> evalInt;
+        evalInt = [&](std::shared_ptr<ASTNode> n)->std::optional<long long>{
+            if (!n) return std::nullopt;
+            if (auto e = std::dynamic_pointer_cast<Expression>(n)) {
+                if (e->token.type == TokenType::NUMBER) { try { return std::stoll(e->token.value); } catch(...) { return 0; } }
+                if (e->token.type == TokenType::BOOLEAN) return e->token.value == "True" ? 1 : 0;
+                return std::nullopt; // identifiers unknown at lint time
+            }
+            if (auto un = std::dynamic_pointer_cast<UnaryExpression>(n)) {
+                auto v = evalInt(un->operand); if (!v) return std::nullopt; if (un->op.type == TokenType::NOT) return (*v) ? 0 : 1; return v;
+            }
+            if (auto b = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                auto Lv = evalInt(b->left); auto Rv = evalInt(b->right);
+                if (!Lv || !Rv) return std::nullopt;
+                switch (b->op.type) {
+                    case TokenType::AND: return ((*Lv)!=0 && (*Rv)!=0) ? 1:0;
+                    case TokenType::OR:  return ((*Lv)!=0 || (*Rv)!=0) ? 1:0;
+                    case TokenType::SURPASSETH: return (*Lv > *Rv) ? 1:0;
+                    case TokenType::REMAINETH:  return (*Lv < *Rv) ? 1:0;
+                    case TokenType::EQUAL:      return (*Lv == *Rv) ? 1:0;
+                    case TokenType::NOT_EQUAL:  return (*Lv != *Rv) ? 1:0;
+                    case TokenType::GREATER:    return (*Lv > *Rv) ? 1:0;
+                    case TokenType::LESSER:     return (*Lv < *Rv) ? 1:0;
+                    default: break;
+                }
+                // arithmetic tokens by value
+                if (b->op.type == TokenType::OPERATOR) {
+                    if (b->op.value == "+") return *Lv + *Rv;
+                    if (b->op.value == "-") return *Lv - *Rv;
+                    if (b->op.value == "*") return *Lv * *Rv;
+                    if (b->op.value == "/") { if (*Rv == 0) return 0; return *Lv / *Rv; }
+                    if (b->op.value == "%") { if (*Rv == 0) return 0; return *Lv % *Rv; }
+                }
+                return std::nullopt;
+            }
+            if (auto c = std::dynamic_pointer_cast<CastExpression>(n)) {
+                auto v = evalInt(c->operand); if (!v) return std::nullopt; if (c->target == CastTarget::ToPhrase) return 0; return (*v);
+            }
+            return std::nullopt;
+        };
+
+        // AST walk with scope tracking
+        std::vector<std::string> spellStack;
+        std::function<void(std::shared_ptr<ASTNode>)> walk;
+        walk = [&](std::shared_ptr<ASTNode> n){
+            if (!n) return;
+            if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
+                bool seenReturn = false;
+                std::string currentSpell = spellStack.empty() ? std::string() : spellStack.back();
+                for (size_t i=0;i<blk->statements.size();++i) {
+                    auto &s = blk->statements[i];
+                    if (seenReturn) {
+                        std::string msg = "🪶  Warning: Unreachable statement after return";
+                        if (!currentSpell.empty()) msg += " in spell '" + currentSpell + "'."; else msg += ".";
+                        L.warnings.push_back(msg);
+                        // still walk to catch nested constructs
+                        walk(s);
+                        continue;
+                    }
+                    if (std::dynamic_pointer_cast<ReturnStatement>(s)) {
+                        seenReturn = true;
+                    }
+                    walk(s);
+                }
+                return;
+            }
+            if (auto sp = std::dynamic_pointer_cast<SpellStatement>(n)) {
+                L.spellsDeclared.insert(sp->spellName);
+                spellStack.push_back(sp->spellName);
+                walk(sp->body);
+                spellStack.pop_back();
+                return;
+            }
+            if (auto inv = std::dynamic_pointer_cast<SpellInvocation>(n)) {
+                L.spellsInvoked.insert(inv->spellName);
+                for (auto &a : inv->args) walk(a);
+                return;
+            }
+            if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) { walk(pr->expression); return; }
+            if (auto si = std::dynamic_pointer_cast<NativeInvocation>(n)) { for (auto &a: si->args) walk(a); return; }
+            if (auto arr = std::dynamic_pointer_cast<ArrayLiteral>(n)) { for (auto &e: arr->elements) walk(e); return; }
+            if (auto obj = std::dynamic_pointer_cast<ObjectLiteral>(n)) { for (auto &kv: obj->entries) walk(kv.second); return; }
+            if (auto idx = std::dynamic_pointer_cast<IndexExpression>(n)) { walk(idx->target); walk(idx->index); return; }
+            if (auto un = std::dynamic_pointer_cast<UnaryExpression>(n)) { walk(un->operand); return; }
+            if (auto cast = std::dynamic_pointer_cast<CastExpression>(n)) { walk(cast->operand); return; }
+            if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) {
+                // constant condition detection
+                auto v = evalInt(ifs->condition);
+                if (v) {
+                    if ((*v) != 0 && ifs->elseBranch) {
+                        L.warnings.push_back("🪶  Warning: Unreachable else-branch (condition always True).");
+                    } else if ((*v) == 0) {
+                        L.warnings.push_back("🪶  Warning: Unreachable then-branch (condition always False).");
+                    }
+                }
+                walk(ifs->condition); walk(ifs->thenBranch); walk(ifs->elseBranch); return;
+            }
             if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(n)) {
                 if (bin->op.type == TokenType::IS_OF) {
-                    if (auto lhs = std::dynamic_pointer_cast<Expression>(bin->left)) {
-                        declCount[lhs->token.value]++;
+                    // redundancy: is of is of
+                    if (std::dynamic_pointer_cast<BinaryExpression>(bin->right) &&
+                        std::dynamic_pointer_cast<BinaryExpression>(bin->right)->op.type == TokenType::IS_OF) {
+                        std::string lhsName = "it";
+                        if (auto lhs = std::dynamic_pointer_cast<Expression>(bin->left)) lhsName = lhs->token.value;
+                        L.warnings.push_back("🪶  Warning: Poetic redundancy: 'is of is of' in declaration of '" + lhsName + "'.");
                     }
-                }
-                walk(bin->left); walk(bin->right);
-            } else if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
-                for (auto &s : blk->statements) walk(s);
-            } else if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) {
-                // Heuristic: warn if phrase literal not ending with punctuation
-                if (auto ex = std::dynamic_pointer_cast<Expression>(pr->expression)) {
-                    if (ex->token.type == TokenType::STRING) {
-                        const std::string &val = ex->token.value;
-                        if (!val.empty() && val.back() != '.' && val.back() != '!' && val.back() != '?' ) {
-                            std::cout << "Lint warning: proclamation string lacks terminal flourish: '" << val << "'\n";
-                        }
+                    // declaration tracking
+                    std::string var;
+                    if (auto lhs = std::dynamic_pointer_cast<Expression>(bin->left)) var = lhs->token.value;
+                    if (!var.empty()) {
+                        if (spellStack.empty()) L.globalsDeclared.insert(var);
+                        else L.perSpell[spellStack.back()].varsDeclared.insert(var);
                     }
+                    walk(bin->right);
+                    return;
                 }
-                walk(pr->expression);
-            } else if (auto un = std::dynamic_pointer_cast<UnaryExpression>(n)) { walk(un->operand); }
-            else if (auto cast = std::dynamic_pointer_cast<CastExpression>(n)) { walk(cast->operand); }
-            else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) { walk(ifs->condition); walk(ifs->thenBranch); walk(ifs->elseBranch); }
+                walk(bin->left); walk(bin->right); return;
+            }
+            if (auto e = std::dynamic_pointer_cast<Expression>(n)) {
+                if (e->token.type == TokenType::IDENTIFIER) {
+                    // variable use
+                    if (spellStack.empty()) L.globalsUsed.insert(e->token.value);
+                    else L.perSpell[spellStack.back()].varsUsed.insert(e->token.value);
+                }
+                return;
+            }
         };
+
         walk(ast);
-        for (auto &kv : declCount) if (kv.second > 1) std::cout << "Lint warning: variable '" << kv.first << "' declared " << kv.second << " times." << std::endl;
-        std::cout << "Lint completed." << std::endl;
+
+        // Unused spells
+        for (const auto &name : L.spellsDeclared) {
+            if (L.spellsInvoked.find(name) == L.spellsInvoked.end()) {
+                L.warnings.push_back("🪶  Warning: The spell '" + name + "' is declared but never invoked.");
+            }
+        }
+        // Unused globals
+        for (const auto &name : L.globalsDeclared) {
+            if (L.globalsUsed.find(name) == L.globalsUsed.end()) {
+                L.warnings.push_back("🪶  Warning: The variable '" + name + "' is declared but never used.");
+            }
+        }
+        // Unused locals per spell
+        for (auto &p : L.perSpell) {
+            for (const auto &name : p.second.varsDeclared) {
+                if (p.second.varsUsed.find(name) == p.second.varsUsed.end()) {
+                    L.warnings.push_back("🪶  Warning: In spell '" + p.first + "', the variable '" + name + "' is declared but never used.");
+                }
+            }
+        }
+
+        // Emit warnings (stable order)
+        for (const auto &w : L.warnings) std::cout << w << std::endl;
         return 0;
     }
 
@@ -408,20 +687,73 @@ int main(int argc, char** argv) {
         if (path.empty()) { std::cerr << "Provide a scroll path for pretty printing." << std::endl; return 1; }
         std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
         std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // Strip optional Prologue before lexing
+        std::optional<ScrollPrologue> metaOpt;
+        source = stripPrologue(source, metaOpt);
         Lexer lx(source); auto toks = lx.tokenize(); Arena astArena; Parser parser(std::move(toks), &astArena); auto ast = parser.parse(); if (!ast) { std::cerr << "Pretty: parse failed." << std::endl; return 1; }
-        // Naive pretty printer: re-walk and indent blocks
-        int indent = 0; std::function<void(std::shared_ptr<ASTNode>)> pp = [&](std::shared_ptr<ASTNode> n){
-            if (!n) return; auto pad=[&](){ for(int i=0;i<indent;++i) std::cout << "    "; };
-            if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
-                for (auto &s : blk->statements) { pp(s); }
-            } else if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) {
-                pad(); std::cout << "Let it be proclaimed: <expr>" << std::endl; // placeholder
-            } else if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(n)) {
-                pad(); std::cout << "<bin expr>" << std::endl; pp(bin->left); pp(bin->right);
-            } else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) {
-                pad(); std::cout << "Should the fates decree <condition> then" << std::endl; indent++; pp(ifs->thenBranch); indent--; pad(); std::cout << "Else" << std::endl; indent++; pp(ifs->elseBranch); indent--; 
+        int indent = 0; auto pad=[&](){ for(int i=0;i<indent;++i) std::cout << "    "; };
+        std::function<void(std::shared_ptr<ASTNode>)> pStmt; std::function<std::string(std::shared_ptr<ASTNode>)> pExpr;
+        pExpr = [&](std::shared_ptr<ASTNode> n)->std::string{
+            if (!n) return "";
+            if (auto e = std::dynamic_pointer_cast<Expression>(n)) {
+                if (e->token.type == TokenType::STRING) return std::string("\"") + e->token.value + "\"";
+                return e->token.value;
+            } else if (auto b = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                return pExpr(b->left) + " " + b->op.value + " " + pExpr(b->right);
+            } else if (auto arr = std::dynamic_pointer_cast<ArrayLiteral>(n)) {
+                std::string s = "["; for (size_t i=0;i<arr->elements.size();++i){ if(i) s += ", "; s += pExpr(arr->elements[i]); } s += "]"; return s;
+            } else if (auto obj = std::dynamic_pointer_cast<ObjectLiteral>(n)) {
+                std::string s = "{"; for (size_t i=0;i<obj->entries.size();++i){ if(i) s += ", "; s += std::string("\"") + obj->entries[i].first + "\": " + pExpr(obj->entries[i].second);} s += "}"; return s;
+            } else if (auto si = std::dynamic_pointer_cast<SpellInvocation>(n)) {
+                std::string s = "Invoke the spell " + si->spellName + " upon ";
+                for (size_t i=0;i<si->args.size();++i){ if(i) s += ", "; s += pExpr(si->args[i]); }
+                return s;
+            } else if (auto ni = std::dynamic_pointer_cast<NativeInvocation>(n)) {
+                std::string s = "Invoke the spirit of " + ni->funcName + " upon ";
+                for (size_t i=0;i<ni->args.size();++i){ if(i) s += ", "; s += pExpr(ni->args[i]); }
+                return s;
             }
-        }; pp(ast); return 0;
+            return "";
+        };
+        pStmt = [&](std::shared_ptr<ASTNode> n){
+            if (!n) return;
+            if (auto blk = std::dynamic_pointer_cast<BlockStatement>(n)) {
+                for (auto &s : blk->statements) pStmt(s);
+            } else if (auto pr = std::dynamic_pointer_cast<PrintStatement>(n)) {
+                pad(); std::cout << "Let it be proclaimed: " << pExpr(pr->expression) << "\n";
+            } else if (auto bin = std::dynamic_pointer_cast<BinaryExpression>(n)) {
+                if (bin->op.type == TokenType::IS_OF) {
+                    // Try infer type from RHS literal shape
+                    std::string typeWord = "a thing named";
+                    if (auto e = std::dynamic_pointer_cast<Expression>(bin->right)) {
+                        if (e->token.type == TokenType::NUMBER) typeWord = "a number named";
+                        else if (e->token.type == TokenType::STRING) typeWord = "a phrase named";
+                        else if (e->token.type == TokenType::BOOLEAN) typeWord = "a truth named";
+                    } else if (std::dynamic_pointer_cast<ArrayLiteral>(bin->right)) typeWord = "an order named";
+                    else if (std::dynamic_pointer_cast<ObjectLiteral>(bin->right)) typeWord = "a tome named";
+                    auto lhs = std::dynamic_pointer_cast<Expression>(bin->left);
+                    pad(); std::cout << "Let it be known throughout the land, " << typeWord << " " << (lhs?lhs->token.value:std::string("it")) << " is of " << pExpr(bin->right) << ".\n";
+                } else {
+                    pad(); std::cout << pExpr(n) << "\n";
+                }
+            } else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) {
+                pad(); std::cout << "Should the fates decree " << pExpr(ifs->condition) << " then\n";
+                indent++; pStmt(ifs->thenBranch); indent--;
+                if (ifs->elseBranch) { pad(); std::cout << "Else\n"; indent++; pStmt(ifs->elseBranch); indent--; }
+            } else if (auto sp = std::dynamic_pointer_cast<SpellStatement>(n)) {
+                pad(); std::cout << "By decree of the elders, a spell named " << sp->spellName << " is cast upon ";
+                for (size_t i=0;i<sp->params.size();++i){ if(i) std::cout << ", "; std::cout << "a traveler known as " << sp->params[i]; }
+                std::cout << ":\n"; indent++; pStmt(sp->body); indent--; 
+            } else if (auto si = std::dynamic_pointer_cast<SpellInvocation>(n)) {
+                pad(); std::cout << pExpr(n) << "\n";
+            } else if (auto ni = std::dynamic_pointer_cast<NativeInvocation>(n)) {
+                pad(); std::cout << pExpr(n) << "\n";
+            } else {
+                pad(); std::cout << pExpr(n) << "\n";
+            }
+        };
+        pStmt(ast);
+        return 0;
     }
 
     if (wantOracle) {
@@ -522,7 +854,7 @@ int main(int argc, char** argv) {
         std::ifstream f(path);
         if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'.\n"; return 1; }
         std::string code((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        runArdentProgram(code);
+        runArdentProgram(code, path);
         return 0;
     }
 
@@ -638,7 +970,7 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::string code((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        runArdentProgram(code);
+        runArdentProgram(code, path);
         return 0;
     }
     

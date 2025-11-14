@@ -398,6 +398,29 @@ When the poet’s craft becomes a scholar’s tool.
 - `--pretty` formats scrolls to a canonical layout (stub).
 - `--banner` prints a clean banner (screenshot-friendly).
 - `--scrolls` lists available stdlib scrolls.
+
+---
+
+## 🌿 Ardent 1.4 — “Whispering Scrolls”
+
+> When standard scrolls whisper across the realm and the tools grow wise.
+
+### What’s New
+- Standard Scrolls library in `scrolls/`: `chronicles`, `truths`, `numbers`, `alchemy`, `time`, `echoes` — all written in Ardent and importable.
+- Poetic, ANSI‑colored tracebacks with highlighted strings/variables and call stack display.
+- REPL (Oracle) boosts: history, multiline input, basic autocomplete, and refined output.
+- Pretty printer: `--pretty <file>` formats to canonical style.
+- Scroll loader enhancements: hierarchical roots, relative/tilde imports, version token parsing (`name@ver`), and caching.
+- Diagnostics: `--lint` (unused vars/spells, unreachable code, “is of is of” redundancy).
+- Benchmarking: `--bench` reports execution time and memory (AST + runtime arenas).
+- Prologue metadata: optional header stored for tooling (`Title`, `Version`, `Author`, extras).
+
+### Quick Pretty/Lint/Bench
+```powershell
+./ardent.exe --pretty examples/blessing_and_return.ardent
+./ardent.exe --lint examples/blessing_and_return.ardent
+./ardent.exe --bench examples/blessing_and_return.ardent
+```
 - `--demo` runs a short poetic showcase.
 
 ### Scroll Loader (Stdlib Autoload)

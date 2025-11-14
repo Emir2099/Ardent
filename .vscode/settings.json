@@ -60,6 +60,18 @@
         "fstream": "cpp",
         "filesystem": "cpp",
         "chrono": "cpp",
-        "iomanip": "cpp"
+        "iomanip": "cpp",
+        "thread": "cpp",
+        "charconv": "cpp",
+        "format": "cpp",
+        "forward_list": "cpp",
+        "map": "cpp",
+        "mutex": "cpp",
+        "optional": "cpp",
+        "ratio": "cpp",
+        "stop_token": "cpp",
+        "xtree": "cpp",
+        "set": "cpp",
+        "unordered_set": "cpp"
     }
 }

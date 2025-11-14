@@ -11,6 +11,9 @@
 #include <fstream>
 #include <filesystem>
 #include <exception>
+#include <chrono>
+#include <thread>
+#include <regex>
 // Shared caches/guards for module system across nested interpreters
 #include "token.h"
 #include "arena.h"
@@ -71,6 +74,12 @@ public:
     explicit ArdentError(std::string m) : msg(std::move(m)) {}
     const char* what() const noexcept override { return msg.c_str(); }
 };
+
+// Simple ANSI color helpers
+static inline std::string colorCyan(const std::string& s) { return std::string("\x1b[96m") + s + "\x1b[0m"; }
+static inline std::string colorGold(const std::string& s) { return std::string("\x1b[93m") + s + "\x1b[0m"; }
+static inline std::string colorGreyItal(const std::string& s) { return std::string("\x1b[90;3m") + s + "\x1b[0m"; }
+static inline std::string colorYellowWarn(const std::string& s) { return std::string("\x1b[33m") + s + "\x1b[0m"; }
 static std::string escapeString(const std::string &s) {
     std::string out;
     out.reserve(s.size());
@@ -200,6 +209,38 @@ Interpreter::Interpreter() {
         int b = toNum(args[1]);
         if (b == 0) throw ArdentError("A curse was cast: Division by zero in spirit 'math.divide'.");
         return a / b;
+    });
+
+    // Time natives
+    registerNative("time.now", [this](const std::vector<Value>& args) -> Value {
+        // Accept 0 or 1 args (ignored)
+        using namespace std::chrono;
+        auto now = system_clock::now();
+        auto secs = duration_cast<seconds>(now.time_since_epoch()).count();
+        // Clamp to int range if necessary
+        long long s = secs;
+        if (s > std::numeric_limits<int>::max()) s = std::numeric_limits<int>::max();
+        if (s < std::numeric_limits<int>::min()) s = std::numeric_limits<int>::min();
+        return static_cast<int>(s);
+    });
+    registerNative("time_now", [this](const std::vector<Value>& args) -> Value {
+        return nativeRegistry["time.now"](args);
+    });
+    registerNative("time.sleep", [this](const std::vector<Value>& args) -> Value {
+        int seconds = 0;
+        if (!args.empty()) {
+            const Value &v = args[0];
+            if (std::holds_alternative<int>(v)) seconds = std::get<int>(v);
+            else if (std::holds_alternative<bool>(v)) seconds = std::get<bool>(v) ? 1 : 0;
+            else if (std::holds_alternative<std::string>(v)) { try { seconds = std::stoi(std::get<std::string>(v)); } catch (...) { seconds = 0; } }
+            else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { seconds = std::stoi(std::string(p.data(), p.size())); } catch (...) { seconds = 0; } }
+        }
+        if (seconds < 0) seconds = 0;
+        std::this_thread::sleep_for(std::chrono::seconds(seconds));
+        return seconds;
+    });
+    registerNative("time_sleep", [this](const std::vector<Value>& args) -> Value {
+        return nativeRegistry["time.sleep"](args);
     });
     // Chronicle Rites: file I/O with sandboxing
     auto pathAllowed = [](const std::string &path) -> bool {
@@ -424,15 +465,16 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         // Resolve spell
         auto it = spells.find(invoke->spellName);
         if (it == spells.end()) {
-            std::cerr << "Error: Unknown spell '" << invoke->spellName << "'" << std::endl;
+            printPoeticCurse(std::string("Unknown spell '") + invoke->spellName + "'");
             return 0;
         }
         const auto &def = it->second;
         if (def.params.size() != invoke->args.size()) {
-            std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
+            printPoeticCurse(std::string("Spell '") + invoke->spellName + "' expects " + std::to_string(def.params.size()) + " arguments but got " + std::to_string(invoke->args.size()));
             return 0;
         }
         // New lexical scope for parameters
+        pushCall(std::string("spell ") + invoke->spellName);
         enterScope();
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
@@ -449,6 +491,7 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             execute(stmt);
         }
         exitScope();
+        popCall();
         if (!hasReturn) return std::string("");
         return retVal;
     }
@@ -478,10 +521,15 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         argv.reserve(native->args.size());
         for (auto &a : native->args) argv.push_back(evaluateValue(a));
         try {
-            return it->second(argv);
+            pushCall(std::string("spirit ") + native->funcName);
+            auto ret = it->second(argv);
+            popCall();
+            return ret;
         } catch (const ArdentError&) {
+            popCall();
             throw; // propagate
         } catch (...) {
+            popCall();
             throw ArdentError(std::string("A rift silences the spirits during '") + native->funcName + "'.");
         }
     }
@@ -759,8 +807,8 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                 try {
                     execute(stmt);
                 } catch (const ArdentError& e) {
-                    // Top-level: narrate unhandled curse
-                    std::cerr << e.what() << std::endl;
+                    // Top-level: narrate unhandled curse with call stack and source
+                    printPoeticCurse(e.what());
                 }
             }
         }
@@ -999,15 +1047,16 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     else if (auto invoke = std::dynamic_pointer_cast<SpellInvocation>(ast)) {
         auto it = spells.find(invoke->spellName);
         if (it == spells.end()) {
-            std::cerr << "Error: Unknown spell '" << invoke->spellName << "'" << std::endl;
+            printPoeticCurse(std::string("Unknown spell '") + invoke->spellName + "'");
             return;
         }
         const auto &def = it->second;
         if (def.params.size() != invoke->args.size()) {
-            std::cerr << "Error: Spell '" << invoke->spellName << "' expects " << def.params.size() << " arguments but got " << invoke->args.size() << std::endl;
+            printPoeticCurse(std::string("Spell '") + invoke->spellName + "' expects " + std::to_string(def.params.size()) + " arguments but got " + std::to_string(invoke->args.size()));
             return;
         }
         // Enter a new scope for spell parameters
+        pushCall(std::string("spell ") + invoke->spellName);
         enterScope();
         for (size_t i = 0; i < def.params.size(); ++i) {
             Value val = evaluateValue(invoke->args[i]);
@@ -1026,6 +1075,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         }
         // Exit spell scope
         exitScope();
+        popCall();
         // If invocation used in a print or assignment context, variable evaluation handles it.
         // For standalone invocation, if returned a phrase, print it automatically (optional design choice).
         if (hasReturn && std::holds_alternative<std::string>(retVal)) {
@@ -1386,8 +1436,48 @@ Interpreter::Module Interpreter::loadModule(const std::string& path) {
     std::ifstream in(path);
     if (!in) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return Module{}; }
     std::stringstream buffer; buffer << in.rdbuf();
+    // Parse leading Prologue block (metadata) and strip it before lexing
+    auto parsePrologue = [](const std::string& src, std::optional<ScrollPrologue>& outMeta) -> std::string {
+        std::vector<std::string> lines; lines.reserve(src.size() / 16 + 1);
+        std::string line; std::istringstream iss(src);
+        while (std::getline(iss, line)) { if (!line.empty() && line.back()=='\r') line.pop_back(); lines.push_back(line); }
+        size_t n = lines.size(); size_t i = 0;
+        while (i < n && lines[i].find_first_not_of(" \t") == std::string::npos) ++i; // skip leading blanks
+        if (i >= n) return src;
+        std::string first = lines[i].substr(lines[i].find_first_not_of(" \t"));
+        if (first.rfind("Prologue", 0) != 0) return src; // no prologue
+        ScrollPrologue meta; bool haveAny = false;
+        size_t j = i + 1;
+        for (; j < n; ++j) {
+            const std::string& L = lines[j];
+            if (L.find_first_not_of(" \t") == std::string::npos) break; // blank line ends prologue
+            // Expect indented 'Key: Value'
+            auto colon = L.find(':'); if (colon == std::string::npos) continue;
+            std::string key = L.substr(0, colon);
+            std::string val = L.substr(colon + 1);
+            auto trim = [](std::string s){
+                auto s1 = s.find_first_not_of(" \t"); auto e1 = s.find_last_not_of(" \t");
+                if (s1 == std::string::npos) return std::string();
+                return s.substr(s1, e1 - s1 + 1);
+            };
+            key = trim(key); val = trim(val);
+            if (key == "Title") { meta.title = val; haveAny = true; }
+            else if (key == "Version") { meta.version = val; haveAny = true; }
+            else if (key == "Author") { meta.author = val; haveAny = true; }
+            else { meta.extras[key] = val; haveAny = true; }
+        }
+        if (j < n && lines[j].find_first_not_of(" \t") == std::string::npos) ++j; // skip single blank separator
+        std::ostringstream out; for (size_t k=j; k<n; ++k) out << lines[k] << "\n";
+        if (haveAny) outMeta = meta; else outMeta.reset();
+        return out.str();
+    };
+    std::optional<ScrollPrologue> metaOpt;
+    std::string filtered = parsePrologue(buffer.str(), metaOpt);
     // Parse using global arena so spell bodies persist
-    Lexer lx(buffer.str());
+    // Tag source for prettier errors
+    std::string prevSource = currentSource_;
+    currentSource_ = path;
+    Lexer lx(filtered);
     auto toks = lx.tokenize();
     Parser p(std::move(toks), &globalArena_);
     auto ast = p.parse();
@@ -1396,31 +1486,92 @@ Interpreter::Module Interpreter::loadModule(const std::string& path) {
     // Execute directly; declarations land in global scope, spells registered here
     execute(ast);
     importing.erase(path);
+    currentSource_ = prevSource;
     Module m;
     m.variables = scopes.front(); // snapshot of global variables (may include pre-existing ones)
     m.spells = spells;            // all spells currently registered
+    if (metaOpt) m.prologue = *metaOpt;
     moduleCache[path] = m;
     return m;
 }
 
 Interpreter::Module Interpreter::loadModuleLogical(const std::string& logicalName) {
-    // First try to resolve logical name via Scroll Loader
-    auto res = scrolls::resolve(logicalName);
+    // If we have a cache hit for the exact logical string (including @version), return it
+    if (auto it = logicalModuleCache.find(logicalName); it != logicalModuleCache.end()) {
+        return it->second;
+    }
+
+    // Extract optional version suffix: name@version
+    std::string requested = logicalName;
+    std::string expectedVersion;
+    auto atPos = requested.find('@');
+    if (atPos != std::string::npos) {
+        expectedVersion = requested.substr(atPos + 1);
+        requested = requested.substr(0, atPos);
+    }
+
+    // Resolve logical name via Scroll Loader
+    auto res = scrolls::resolve(requested);
     if (!res.found) {
         std::cerr << "The scroll \"" << logicalName << "\" could not be found among the libraries of men." << std::endl;
         return Module{};
     }
-    // Prefer .avm if exists alongside .ardent: replace extension and check
     std::filesystem::path p(res.path);
+    
+    // If a version was requested, try to peek the scroll's Prologue Version first
+    if (!expectedVersion.empty()) {
+        std::error_code ec;
+        if (std::filesystem::exists(p, ec) && std::filesystem::is_regular_file(p, ec)) {
+            std::ifstream in(p.string());
+            if (in) {
+                std::string line; bool inPrologue = false; std::string foundVersion;
+                while (std::getline(in, line)) {
+                    if (line.find("Prologue") != std::string::npos) { inPrologue = true; continue; }
+                    if (inPrologue) {
+                        // Trim leading spaces
+                        auto first = line.find_first_not_of(" \t");
+                        if (first == std::string::npos) break;
+                        std::string l = line.substr(first);
+                        if (l.rfind("Version:", 0) == 0) {
+                            auto pos = l.find(':');
+                            if (pos != std::string::npos) {
+                                std::string v = l.substr(pos + 1);
+                                // trim
+                                auto s = v.find_first_not_of(" \t");
+                                auto e = v.find_last_not_of(" \t\r\n");
+                                if (s != std::string::npos && e != std::string::npos) v = v.substr(s, e - s + 1);
+                                foundVersion = v;
+                                break;
+                            }
+                        }
+                        // Stop scanning prologue on blank line or non-indented section
+                        if (line.empty() || (!line.empty() && (line[0] != ' ' && line[0] != '\t'))) break;
+                    }
+                }
+                if (!foundVersion.empty() && foundVersion != expectedVersion) {
+                    std::cerr << "Whispered warning: expected version '" << expectedVersion
+                              << "' for scroll '" << requested << "', but found '" << foundVersion << "'." << std::endl;
+                } else if (foundVersion.empty()) {
+                    std::cerr << "Whispered warning: scroll '" << requested << "' declares no Version in its Prologue." << std::endl;
+                }
+            }
+        }
+    }
+
+    // Prefer .avm if exists alongside .ardent: replace extension and check
     std::filesystem::path avmPath = p;
     avmPath.replace_extension(".avm");
     std::error_code ec;
     if (std::filesystem::exists(avmPath, ec)) {
         // Attempt to load bytecode chunk quickly (placeholder: we would integrate with VM later)
         // For now, just fall back to source path until AVM module linking is implemented.
-        return loadModule(p.string());
+        Module m = loadModule(p.string());
+        logicalModuleCache[logicalName] = m;
+        return m;
     }
-    return loadModule(p.string());
+    Module m = loadModule(p.string());
+    logicalModuleCache[logicalName] = m;
+    return m;
 }
 
 // ===== REPL helpers =====
@@ -1460,11 +1611,50 @@ Interpreter::Value Interpreter::evaluateReplValue(std::shared_ptr<ASTNode> node)
     return 0;
 }
 
+// ===== Error formatting =====
+void Interpreter::printPoeticCurse(const std::string& message) const {
+    // Highlight: single-quoted words -> cyan (variables); double-quoted strings -> gold
+    auto replaceRegex = [](const std::string& in, const std::regex& re, const std::function<std::string(const std::smatch&)>& fn) -> std::string {
+        std::string out; out.reserve(in.size());
+        std::sregex_iterator it(in.begin(), in.end(), re), end;
+        size_t last = 0;
+        for (; it != end; ++it) {
+            auto m = *it;
+            out.append(in, last, static_cast<size_t>(m.position()) - last);
+            out += fn(m);
+            last = static_cast<size_t>(m.position() + m.length());
+        }
+        out.append(in, last, std::string::npos);
+        return out;
+    };
+    auto highlight = [&](const std::string& in) -> std::string {
+        try {
+            std::string out = replaceRegex(in, std::regex("\"([^\"]*)\""), [&](const std::smatch& m){ return colorGold(m.str()); });
+            out = replaceRegex(out, std::regex("'([^']+)'"), [&](const std::smatch& m){ return colorCyan(m.str()); });
+            return out;
+        } catch (...) { return in; }
+    };
+    std::string src = currentSource_.empty() ? std::string("<unknown>") : currentSource_;
+    std::cerr << colorYellowWarn("\u26A0\uFE0F  A curse was cast in \"") << colorGold(src) << colorYellowWarn("\"") << std::endl;
+    std::cerr << "   " << colorGreyItal(std::string("\u21B3 ") + highlight(message)) << std::endl;
+    if (!callStack_.empty()) {
+        std::cerr << colorGreyItal("   \u21B3 Call stack:") << std::endl;
+        for (const auto& f : callStack_) {
+            std::cerr << colorGreyItal(std::string("     • ") + f) << std::endl;
+        }
+    }
+}
+
 std::string Interpreter::stringifyValueForRepl(const Interpreter::Value& v) {
     if (std::holds_alternative<int>(v)) return std::to_string(std::get<int>(v));
     if (std::holds_alternative<bool>(v)) return std::get<bool>(v) ? std::string("True") : std::string("False");
     if (std::holds_alternative<std::string>(v)) return std::get<std::string>(v);
     if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); return std::string(p.data(), p.size()); }
     return formatValue(v);
+}
+ 
+// Report total arena-backed memory usage
+std::size_t Interpreter::bytesUsed() const {
+    return globalArena_.bytesUsed() + lineArena_.bytesUsed();
 }
  

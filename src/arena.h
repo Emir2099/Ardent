@@ -62,6 +62,14 @@ public:
         blocks_.back().offset = f.offset;
     }
 
+    // Report total bytes currently occupied across all blocks (high-water offsets).
+    // Useful for coarse memory usage/benchmarking.
+    std::size_t bytesUsed() const {
+        std::size_t sum = 0;
+        for (const auto &b : blocks_) sum += b.offset;
+        return sum;
+    }
+
 private:
     std::vector<Block> blocks_;
     void addBlock(std::size_t cap) {

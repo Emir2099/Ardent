@@ -4,11 +4,20 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <unordered_map>
 #include "token.h"
 
 class ASTNode {
 public:
     virtual ~ASTNode() = default;
+};
+
+// Optional scroll metadata header (Prologue)
+struct ScrollPrologue {
+    std::string title;
+    std::string version;
+    std::string author;
+    std::unordered_map<std::string, std::string> extras; // any additional key: value pairs
 };
 
 // Represents a number or identifier

@@ -899,7 +899,15 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
     // Consume optional 'a' or determiners until we reach SPELL_NAMED
     while (!isAtEnd() && peek().type != TokenType::SPELL_NAMED) advance();
     if (!match(TokenType::SPELL_NAMED)) { std::cerr << "Error: Expected 'spell named' in spell definition" << std::endl; return nullptr; }
-    Token spellName = consume(TokenType::IDENTIFIER, "Expected spell name after 'spell named'");
+    // Accept identifier or certain keywords as valid spell names (e.g., 'whisper')
+    while (!isAtEnd() && !(peek().type == TokenType::IDENTIFIER || peek().type == TokenType::WHISPER)) advance();
+    Token spellName = peek();
+    if (spellName.type == TokenType::IDENTIFIER || spellName.type == TokenType::WHISPER) {
+        advance();
+    } else {
+        consume(TokenType::IDENTIFIER, "Expected spell name after 'spell named'");
+        return nullptr;
+    }
     // Expect 'is cast upon'
     if (!match(TokenType::SPELL_CAST)) { std::cerr << "Error: Expected 'is cast upon' in spell definition" << std::endl; return nullptr; }
     // Parameter parsing: sequence of descriptor tokens ending with KNOWN_AS name pairs until ':'
@@ -946,8 +954,15 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
 std::shared_ptr<ASTNode> Parser::parseSpellInvocation() {
     // Expect spell name after SPELL_CALL
     // skip optional whitespace/determiners until IDENTIFIER
-    while (!isAtEnd() && peek().type != TokenType::IDENTIFIER) advance();
-    Token nameTok = consume(TokenType::IDENTIFIER, "Expected spell name after 'Invoke the spell'");
+    while (!isAtEnd() && !(peek().type == TokenType::IDENTIFIER || peek().type == TokenType::WHISPER)) advance();
+    // Accept reserved keyword 'whisper' as a valid spell name to avoid collision with Else-branch whispering
+    Token nameTok = peek();
+    if (nameTok.type == TokenType::IDENTIFIER || nameTok.type == TokenType::WHISPER) {
+        advance();
+    } else {
+        consume(TokenType::IDENTIFIER, "Expected spell name after 'Invoke the spell'");
+        return nullptr;
+    }
     // Support dotted spell names e.g., alch.transmute
     std::string fullName = nameTok.value;
     while (!isAtEnd() && peek().type == TokenType::DOT) {

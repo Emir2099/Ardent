@@ -6,6 +6,7 @@
 #include <vector>
 #include <functional>
 #include <filesystem>
+#include <optional>
 #include "scroll_loader.h"
 #include "ast.h"
 #include "arena.h"
@@ -30,8 +31,26 @@ public:
                                Tome>;
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
     // Module: cached variables/spells from imported scroll
-    struct Module { std::unordered_map<std::string, Value> variables; std::unordered_map<std::string, SpellDef> spells; };
+    struct Module {
+        std::unordered_map<std::string, Value> variables;
+        std::unordered_map<std::string, SpellDef> spells;
+        std::optional<ScrollPrologue> prologue; // parsed metadata if present
+    };
     using NativeFunc = std::function<Value(const std::vector<Value>&)>;
+    // Public helpers for REPL and tooling
+    void setSourceName(const std::string& name) { currentSource_ = name; }
+    std::string getSourceName() const { return currentSource_; }
+    std::vector<std::string> getSpellNames() const {
+        std::vector<std::string> out; out.reserve(spells.size());
+        for (auto &p : spells) out.push_back(p.first);
+        return out;
+    }
+    std::vector<std::string> getVariableNames() const {
+        std::vector<std::string> out; if (scopes.empty()) return out;
+        out.reserve(scopes.front().size());
+        for (auto &p : scopes.front()) out.push_back(p.first);
+        return out;
+    }
 private:
     // Nested lexical scopes: scopes[0] = global, scopes.back() = current
     std::vector<std::unordered_map<std::string, Value>> scopes;
@@ -58,9 +77,17 @@ private:
     struct ReturnSignal { Value value; };
     bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
     bool inTryContext = false; // when true, allow curses to bubble to enclosing try/catch
+    // Error context & call stack
+    std::string currentSource_ = "<repl>";
+    std::vector<std::string> callStack_{}; // nested spells / natives
+    void pushCall(const std::string& label) { callStack_.push_back(label); }
+    void popCall() { if (!callStack_.empty()) callStack_.pop_back(); }
+    void printPoeticCurse(const std::string& message) const;
     // Import support
     std::unordered_map<std::string, Module> moduleCache;
+    std::unordered_map<std::string, Module> logicalModuleCache; // cache by logical import string
     std::unordered_map<std::string, bool> importing;
+    std::optional<ScrollPrologue> currentPrologue_{};
     Module loadModule(const std::string& path);
     Module loadModuleLogical(const std::string& logicalName);
     // Native functions
@@ -94,6 +121,13 @@ public:
     // REPL helpers
     Value evaluateReplValue(std::shared_ptr<ASTNode> node);
     std::string stringifyValueForRepl(const Value& v);
+
+    // Diagnostics
+    std::size_t bytesUsed() const; // total arena-backed bytes used (global + line)
+
+    // Prologue metadata for the current primary scroll (e.g., --interpret)
+    void setCurrentPrologue(const ScrollPrologue& p) { currentPrologue_ = p; }
+    const std::optional<ScrollPrologue>& getCurrentPrologue() const { return currentPrologue_; }
 
 };
 

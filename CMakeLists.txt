@@ -20,6 +20,11 @@ add_executable(ardent
   src/interpreter.cpp
   src/scroll_loader.cpp)
 
+# Header search paths (allow includes from src/ and src/avm/)
+target_include_directories(ardent PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/src
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/avm)
+
 # Basic warnings
 if (MSVC)
   target_compile_options(ardent PRIVATE /W4)
