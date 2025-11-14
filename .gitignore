@@ -25,10 +25,12 @@ ardent_avm_demo.exe
 
 ### Release & packaging artifacts
 deliverables_*/
+!deliverables_1_4_0/
 deliverables_1_3/
 ardent-*.zip
 ardent-*.tar.gz
 SHA256SUMS.txt
+dist/
 
 ### Cross-platform built binaries (without extensions)
 /ardent
