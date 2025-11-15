@@ -23,6 +23,12 @@ validator_output.txt
 ardent_vm.exe
 ardent_avm_demo.exe
 
+# Editor workspace (machine-specific)
+.vscode/
+
+# Local AOT test binary produced by --aot runs
+numbers_native.exe
+
 ### Release & packaging artifacts
 deliverables_*/
 !deliverables_1_4_0/

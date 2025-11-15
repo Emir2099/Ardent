@@ -460,6 +460,47 @@ When the poet’s craft becomes a scholar’s tool.
 
 ---
 
+## ⚒️ Ardent 2.0 — The Forge of Fate
+
+> Where verse becomes metal. Where spells are tempered into IR, and scrolls are forged into native steel.
+
+This phase introduces a complete LLVM-based toolchain alongside the classic interpreter and VM. You can now generate LLVM IR, JIT-execute it with ORC v2, or AOT-compile to native executables.
+
+### What’s Implemented
+
+- **AST → LLVM IR generation:** Fully implemented in `src/irgen/compiler_ir.cpp` (module + function lowering, values, calls, control flow).
+- **JIT execution (ORC v2):** Working and stable; verified outputs; proper symbol resolution; ABI-stable runtime calls.
+- **AOT compilation (.obj → .exe / .so):** LLVM emits object files via `TargetMachine`. Windows native EXE generation works end-to-end. Entry shim + runtime linked; final EXE successfully runs Ardent code.
+- **ArdentValue ABI & lowering rules:** Struct layout finalized; constructors for boolean/phrase/number correct; validated under JIT and AOT.
+- **Type inference for numeric ops:** Fast paths for +, -, * with safe dynamic fallback.
+- **Spell calls → direct LLVM calls:** Spell declarations lower to `spell_<name>` functions; calls inline cleanly where possible.
+- **Control flow lowering (if/else/while):** Completed with valid block structure; verified across multiple tests.
+- **Debug symbols / readable IR:** `--emit-llvm` emits readable IR for inspection and debugging; line info optional.
+
+### New CLI Flags (LLVM Tooling)
+
+- `--emit-llvm <scroll>`: Emit LLVM IR (`.ll`) next to the source.
+- `--emit-o <scroll> -o out.obj`: Emit an object file for the host target.
+- `--aot <scroll> -o out.exe`: AOT-compile to a native executable (Windows shown; `.so/.dylib` next).
+- `--target <triple>`: Override target triple for cross-compilation experiments.
+
+Example on Windows (MinGW toolchain present):
+
+```powershell
+# Emit human-readable LLVM IR
+./build/ardent.exe --emit-llvm test_scrolls/numbers_test.ardent
+
+# Forge native executable (produces numbers_native.exe)
+./build/ardent.exe --aot test_scrolls/numbers_test.ardent -o numbers_native.exe
+./numbers_native.exe
+```
+
+Notes:
+- On Windows Ardent prefers MinGW `g++` to link with the static runtime; if unavailable, it falls back to `lld-link` (requires proper Windows SDK/MSVC `LIB` paths).
+- Runtime debug prints can be silenced later; they’re helpful while validating the AOT pipeline.
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

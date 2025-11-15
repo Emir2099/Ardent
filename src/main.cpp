@@ -22,10 +22,37 @@
 #include "avm/disassembler.h"
 #include "version.h"
 #include "scroll_loader.h"
+#ifdef ARDENT_ENABLE_LLVM
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/MC/TargetRegistry.h>
+#ifndef LLVM_SUPPORT_HOST_H
+namespace llvm { namespace sys { std::string getDefaultTargetTriple(); } }
+#endif
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Support/CodeGen.h>
+#include <llvm/ExecutionEngine/Orc/LLJIT.h>
+#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
+#include <llvm/ExecutionEngine/Orc/ExecutionUtils.h>
+#include <llvm/ExecutionEngine/Orc/Mangling.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/raw_ostream.h>
+#include "irgen/compiler_ir.h"
+#include "runtime/ardent_runtime.h"
+#endif
+#ifdef ARDENT_ENABLE_LLD
+#include <lld/Common/Driver.h>
+#endif
 #ifdef _WIN32
 #include <windows.h>
 #include <io.h>
 #include <fcntl.h>
+#endif
+
+#if defined(ARDENT_ENABLE_LLVM) && (defined(__MINGW32__) || defined(__MINGW64__))
+extern "C" void __main();
 #endif
 
 // Helper to parse an optional Prologue header and strip it before lexing
@@ -358,18 +385,30 @@ int main(int argc, char** argv) {
     bool vmDisasm = false; // compile and disassemble the bytecode or disassemble a .avm file
     bool vmSaveAvm = false; // when compiling, save the chunk to a .avm file
     std::string vmSavePath;
+    // LLVM modes
+    bool wantLLVMJIT = false;     // --llvm <file>
+    bool wantEmitLLVM = false;    // --emit-llvm <file>
+    bool wantAOT = false;         // --aot <file> -o out.exe
+    std::string aotOutPath;       // -o path for AOT
+    bool wantEmitObject = false;  // --emit-o <file>
+    std::string targetOverride;   // --target <triple>
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
     bool chroniclesOnly = false; // run only the Chronicle Rites demo
+    bool quietAssign = false; // --quiet-assign suppress variable assignment logs
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--oracle" || arg == "-o") wantOracle = true;
+        // Reserve '-o' for output path; oracle mode uses only long form now
+        if (arg == "--oracle") wantOracle = true;
         else if (arg == "--vm-repl") wantVmRepl = true;
         else if (arg == "--repl") { wantVmRepl = true; wantReplAlias = true; }
         else if (arg == "--version") printVersion = true;
         else if (arg == "--compile") compileOnly = true;
-        else if (arg == "-o" && i + 1 < argc) { compileOutPath = argv[++i]; }
+        else if (arg == "-o" && i + 1 < argc) {
+            // Single unified -o: if AOT requested, treat as executable path, else compile output
+            if (wantAOT) aotOutPath = argv[++i]; else compileOutPath = argv[++i];
+        }
         else if (arg == "--interpret") interpretMode = true;
         else if (arg == "--banner") bannerOnly = true;
         else if (arg == "--help") wantHelp = true;
@@ -382,12 +421,19 @@ int main(int argc, char** argv) {
         else if (arg == "--vm") vmMode = true;
         else if (arg == "--disassemble" || arg == "--vm-disasm") vmDisasm = true;
         else if (arg == "--save-avm" && i + 1 < argc) { vmSaveAvm = true; vmSavePath = argv[++i]; }
+        else if (arg == "--llvm") wantLLVMJIT = true;
+        else if (arg == "--emit-llvm") wantEmitLLVM = true;
+        else if (arg == "--emit-o") wantEmitObject = true;
+        else if (arg == "--aot") wantAOT = true;
+        else if (arg == "--target" && i + 1 < argc) { targetOverride = argv[++i]; }
+        // (Removed duplicate -o handler for AOT/compile)
         else if (arg == "--color") colorize = true;
         else if (arg == "--no-color") colorize = false;
         else if (arg == "--emoji") emoji = true;
         else if (arg == "--no-emoji") emoji = false;
         else if (arg == "--poetic") poetic = true;
         else if (arg == "--chronicles-demo") chroniclesOnly = true;
+        else if (arg == "--quiet-assign") quietAssign = true;
     }
     if (printVersion) {
         initWindowsConsole(true);
@@ -415,6 +461,11 @@ int main(int argc, char** argv) {
         std::cout << "  --vm <file|.avm>     Run in the Virtual Ember (compile or load).\n";
         std::cout << "  --repl / --oracle    Poetic interactive REPL.\n";
         std::cout << "  --disassemble <file|.avm>  Show bytecode listing.\n";
+        std::cout << "  --llvm <file>         Compile to LLVM IR and run via JIT.\n";
+        std::cout << "  --emit-llvm <file>    Output LLVM IR (.ll) for the scroll.\n";
+        std::cout << "  --emit-o <file>       Output only the object file (AOT stage 1).\n";
+        std::cout << "  --aot <file> -o out   Ahead-of-time compile to native (experimental).\n";
+        std::cout << "  --target <triple>     Override target triple for AOT/object emission.\n";
         std::cout << "  --bench              Measure the swiftness of your spells.\n";
         std::cout << "  --lint               Inspect scrolls for structural blemishes.\n";
         std::cout << "  --pretty             Beautify and reindent Ardent verses.\n";
@@ -422,8 +473,11 @@ int main(int argc, char** argv) {
         std::cout << "  --demo               Run a brief poetic showcase.\n";
         std::cout << "  --banner             Print logo + version only.\n";
         std::cout << "  --version            Display Ardent version and codename.\n";
+        std::cout << "  --quiet-assign       Suppress 'Variable assigned:' lines (test parity).\n";
         return 0;
     }
+    // Apply quiet assignment flag globally so interpreter paths honor it
+    extern bool gQuietAssign; gQuietAssign = quietAssign;
     if (wantBench) {
         // --bench <file>: execute scroll, measure time and arena allocations
         std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
@@ -960,6 +1014,198 @@ int main(int argc, char** argv) {
             return res.ok ? 0 : 1;
         }
     }
+
+#ifdef ARDENT_ENABLE_LLVM
+    // LLVM IR/JIT/AOT modes
+    if (wantLLVMJIT || wantEmitLLVM || wantAOT || wantEmitObject) {
+        // Determine input path
+        std::string path;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') { path = argv[i]; break; }
+            if ((std::string)argv[i] == std::string("-o")) ++i; // skip output param
+        }
+        if (path.empty()) { std::cerr << "Provide a scroll path for LLVM modes." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // Strip optional Prologue before lexing
+        std::optional<ScrollPrologue> metaOpt; source = stripPrologue(source, metaOpt);
+        Lexer lx(source); auto toks = lx.tokenize(); Arena astArena; Parser parser(std::move(toks), &astArena); auto ast = parser.parse();
+        if (!ast) { std::cerr << "LLVM: parse failed." << std::endl; return 1; }
+        auto root = std::dynamic_pointer_cast<BlockStatement>(ast);
+        if (!root) { std::cerr << "LLVM: expected BlockStatement root." << std::endl; return 1; }
+
+        // Build module
+        using namespace llvm; using namespace llvm::orc;
+        InitializeNativeTarget(); InitializeNativeTargetAsmPrinter(); InitializeNativeTargetAsmParser();
+        auto ctx = std::make_unique<LLVMContext>();
+        auto module = std::make_unique<Module>("ardent_module", *ctx);
+        ArdentRuntime rt; IRCompiler comp(*ctx, *module, rt);
+        comp.compileProgram(root.get());
+        std::fprintf(stderr, "[JIT] compileProgram done\n");
+
+        if (wantEmitLLVM) {
+            // Write to <input>.ll next to the source
+            std::string outPath = path + ".ll";
+            std::error_code ec; raw_fd_ostream os(outPath, ec, sys::fs::OF_Text);
+            if (ec) { std::cerr << "Failed to open output .ll: " << outPath << std::endl; return 1; }
+            module->print(os, nullptr);
+            std::cout << "Emitted LLVM IR to: " << outPath << std::endl;
+            return 0;
+        }
+
+        if (wantLLVMJIT) {
+            std::fprintf(stderr, "[JIT] creating LLJIT...\n");
+            auto jitExpected = LLJITBuilder().create();
+            if (!jitExpected) { std::cerr << "Failed to create LLJIT: " << toString(jitExpected.takeError()) << std::endl; return 1; }
+            auto jit = std::move(*jitExpected);
+            // Search current process and define absolute symbols for runtime
+            {
+                std::fprintf(stderr, "[JIT] adding current-process generator...\n");
+                auto gen = cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(jit->getDataLayout().getGlobalPrefix()));
+                jit->getMainJITDylib().addGenerator(std::move(gen));
+            }
+            {
+                MangleAndInterner M(jit->getExecutionSession(), jit->getDataLayout());
+                SymbolMap symbols;
+                symbols[M("ardent_rt_add_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_add_i64), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_sub_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_sub_i64), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_mul_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_mul_i64), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_div_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_div_i64), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_print_av")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_print_av), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_print_av_ptr")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_print_av_ptr), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_print_av_ptr")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_print_av_ptr), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_concat_av_ptr")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_concat_av_ptr), JITSymbolFlags::Exported);
+                symbols[M("ardent_rt_version")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_version), JITSymbolFlags::Exported);
+                symbols[M("__main")]            = ExecutorSymbolDef(ExecutorAddr::fromPtr(&__main), JITSymbolFlags::Exported);
+                std::fprintf(stderr, "[JIT] defining absolute symbols...\n");
+                if (auto err = jit->getMainJITDylib().define(absoluteSymbols(symbols))) {
+                    std::cerr << "Failed to define absolute symbols: " << toString(std::move(err)) << std::endl; return 1;
+                }
+            }
+            ThreadSafeModule tsm(std::move(module), std::move(ctx));
+            std::fprintf(stderr, "[JIT] adding IR module...\n");
+            if (auto err = jit->addIRModule(std::move(tsm))) { std::cerr << "Failed to add module: " << toString(std::move(err)) << std::endl; return 1; }
+            std::fprintf(stderr, "[JIT] looking up ardent_entry...\n");
+            auto symExpected = jit->lookup("ardent_entry");
+            if (!symExpected) { std::cerr << "Symbol 'ardent_entry' not found: " << toString(symExpected.takeError()) << std::endl; return 1; }
+            using EntryFn = int(*)();
+            EntryFn entry = symExpected->toPtr<EntryFn>();
+            std::fprintf(stderr, "[JIT] calling ardent_entry...\n");
+            std::cout << "[LLVM JIT] Invoking ardent_entry..." << std::endl;
+            int rc = entry();
+            std::cout << "[LLVM JIT] ardent_entry returned: " << rc << std::endl;
+            return rc;
+        }
+
+        if (wantEmitObject || wantAOT) {
+            // ===== Stage 1: Object file emission =====
+            std::string triple = targetOverride.empty() ? llvm::sys::getDefaultTargetTriple() : targetOverride;
+            module->setTargetTriple(triple);
+            std::string error;
+            const llvm::Target *target = llvm::TargetRegistry::lookupTarget(triple, error);
+            if (!target) { std::cerr << "Target lookup failed: " << error << std::endl; return 1; }
+            llvm::TargetOptions opt;
+            // Modern createTargetMachine prefers optional reloc/code model parameters
+            std::unique_ptr<llvm::TargetMachine> TM(target->createTargetMachine(
+                triple, "generic", "", opt, std::nullopt, std::nullopt, llvm::CodeGenOptLevel::Default));
+            module->setDataLayout(TM->createDataLayout());
+            // Derive object file path
+#ifdef _WIN32
+            std::string objExt = ".obj";
+#else
+            std::string objExt = ".o";
+#endif
+            std::string baseName = path;
+            // strip directory
+            auto slashPos = baseName.find_last_of("/\\"); if (slashPos != std::string::npos) baseName = baseName.substr(slashPos+1);
+            // strip extension
+            auto dotPos = baseName.find_last_of('.'); if (dotPos != std::string::npos) baseName = baseName.substr(0, dotPos);
+            std::string objPath = baseName + objExt;
+            if (wantEmitObject && !compileOutPath.empty()) objPath = compileOutPath; // reuse -o if user passed (legacy)
+            if (wantAOT && !aotOutPath.empty()) {
+                // Place object next to requested exe name
+                objPath = aotOutPath + objExt;
+            }
+            {
+                llvm::legacy::PassManager pm;
+                std::error_code ec;
+                llvm::raw_fd_ostream dest(objPath, ec, llvm::sys::fs::OF_None);
+                if (ec) { std::cerr << "Failed to open object output: " << objPath << " (" << ec.message() << ")" << std::endl; return 1; }
+                if (TM->addPassesToEmitFile(pm, dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
+                    std::cerr << "TargetMachine cannot emit an object file for this target." << std::endl; return 1; }
+                pm.run(*module);
+                dest.flush();
+            }
+            std::cout << "Forged object scroll: " << objPath << std::endl;
+            if (wantEmitObject && !wantAOT) return 0; // Object-only mode ends here
+#ifdef ARDENT_ENABLE_LLD
+            // ===== Stage 2: Link with LLD =====
+            std::string exePath;
+#ifdef _WIN32
+            exePath = aotOutPath.empty() ? (baseName + ".exe") : aotOutPath;
+            // Prefer MinGW g++ linking if our static runtime archive exists; fallback to lld-link.
+            bool linkOk = false;
+            {
+                // Try common locations for the static runtime archive created by our build
+                std::string rtLib;
+                if (std::filesystem::exists("build/" "libardent_runtime.a")) rtLib = "build/libardent_runtime.a";
+                else if (std::filesystem::exists("libardent_runtime.a")) rtLib = "libardent_runtime.a";
+
+                if (!rtLib.empty()) {
+                    std::ostringstream gcc;
+                    gcc << "g++ -o " << '"' << exePath << '"'
+                        << ' ' << '"' << objPath << '"'
+                        << ' ' << '"' << rtLib << '"'
+                        << " -static-libgcc -static-libstdc++ -lwinpthread -lkernel32";
+                    int rc = std::system(gcc.str().c_str());
+                    linkOk = (rc == 0) && std::filesystem::exists(exePath);
+                }
+            }
+            if (!linkOk) {
+                // Build a shell command to invoke external lld-link, adding kernel32 only.
+                std::ostringstream cmd;
+                cmd << "lld-link /OUT:" << '"' << exePath << '"' << ' ' << '"' << objPath << '"' << " kernel32.lib";
+                int lldRc = std::system(cmd.str().c_str());
+                linkOk = (lldRc == 0) && std::filesystem::exists(exePath);
+                if (!linkOk) {
+                    std::cerr << "LLD (lld-link) failed to link executable. If you are using MSVC, run from a Developer Command Prompt or set LIB to your Windows SDK and MSVC lib paths; if using MinGW, ensure g++ is in PATH." << std::endl;
+                    return 1;
+                }
+            }
+#elif defined(__APPLE__)
+            exePath = aotOutPath.empty() ? (baseName) : aotOutPath;
+            std::vector<const char*> lldArgs; lldArgs.push_back("ld64.lld");
+            lldArgs.push_back("-o"); lldArgs.push_back(exePath.c_str());
+            lldArgs.push_back(objPath.c_str());
+            const std::array<lld::DriverDef, 1> drivers = {{{"ld64", lld::macho::link}}};
+            auto lldRes = lld::lldMain(lldArgs, llvm::outs(), llvm::errs(), drivers);
+            bool linkOk = std::filesystem::exists(exePath);
+            if (!linkOk) { std::cerr << "LLD (MachO) failed to link executable." << std::endl; return 1; }
+#else
+            exePath = aotOutPath.empty() ? (baseName) : aotOutPath;
+            std::vector<const char*> lldArgs; lldArgs.push_back("ld.lld");
+            lldArgs.push_back("-o"); lldArgs.push_back(exePath.c_str());
+            lldArgs.push_back(objPath.c_str());
+            // Rely on system default libs; user may need to add -lc etc. in future.
+            const std::array<lld::DriverDef, 1> drivers = {{{"ld.lld", lld::elf::link}}};
+            auto lldRes = lld::lldMain(lldArgs, llvm::outs(), llvm::errs(), drivers);
+            bool linkOk = std::filesystem::exists(exePath);
+            if (!linkOk) { std::cerr << "LLD (ELF) failed to link executable." << std::endl; return 1; }
+#endif
+            std::cout << "Forged native scroll: " << exePath << std::endl;
+            return 0;
+#else
+            std::cerr << "LLD not linked into this build; AOT linking unavailable. Object file generated." << std::endl;
+            return 0;
+#endif
+        }
+    }
+#else
+    if (wantLLVMJIT || wantEmitLLVM || wantAOT) {
+        std::cerr << "Ardent was built without LLVM support. Reconfigure with -DARDENT_ENABLE_LLVM=ON." << std::endl;
+        return 1;
+    }
+#endif
 
     // Scroll mode: ardent <path> (only when first non-flag argument is a path)
     if (argc > 1 && argv[1][0] != '-') {

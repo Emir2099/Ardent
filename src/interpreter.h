@@ -23,12 +23,16 @@ public:
     struct Order { size_t size; const SimpleValue* data; };
     struct TomeEntry { std::string key; SimpleValue value; };
     struct Tome { size_t size; const TomeEntry* data; };
-    using Value = std::variant<int, std::string, bool,
-                               std::vector<SimpleValue>, // legacy
-                               std::unordered_map<std::string, SimpleValue>, // legacy
-                               Phrase,
-                               Order,
-                               Tome>;
+    using Value = std::variant<
+        int,
+        std::string,
+        bool,
+        std::vector<SimpleValue>, // legacy
+        std::unordered_map<std::string, SimpleValue>, // legacy
+        Phrase,
+        Order,
+        Tome
+    >;
     struct SpellDef { std::vector<std::string> params; std::shared_ptr<BlockStatement> body; };
     // Module: cached variables/spells from imported scroll
     struct Module {

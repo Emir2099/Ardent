@@ -1,5 +1,8 @@
 #include "interpreter.h"
 #include <iostream>
+#include "interpreter.h"
+
+bool gQuietAssign = false;
 #include "lexer.h"
 #include "parser.h"
 #include <functional>
@@ -352,16 +355,18 @@ void Interpreter::declareVariable(const std::string& name, const Value& value) {
     env_.declare(name.c_str(), static_cast<std::uint32_t>(name.size()), value);
     if (inLineMode_) lineTouched_.push_back(name);
     // Debug
-    std::cout << "Variable assigned: " << name << " = ";
-    if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
-    else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
-    else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
-    else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
-    else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
-    else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
-    else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
-    else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
-    std::cout << std::endl;
+    if (!gQuietAssign) {
+        std::cout << "Variable assigned: " << name << " = ";
+        if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
+        else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+        else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
+        else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+        else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
+        else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+        else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
+        else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
+        std::cout << std::endl;
+    }
 }
 
 void Interpreter::assignVariableAny(const std::string& name, const Value& value) {
@@ -375,16 +380,18 @@ void Interpreter::assignVariableAny(const std::string& name, const Value& value)
     env_.assign(name.c_str(), static_cast<std::uint32_t>(name.size()), value);
     if (inLineMode_) lineTouched_.push_back(name);
     // Debug
-    std::cout << "Variable assigned: " << name << " = ";
-    if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
-    else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
-    else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
-    else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
-    else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
-    else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
-    else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
-    else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
-    std::cout << std::endl;
+    if (!gQuietAssign) {
+        std::cout << "Variable assigned: " << name << " = ";
+        if (std::holds_alternative<int>(value)) std::cout << std::get<int>(value);
+        else if (std::holds_alternative<std::string>(value)) std::cout << std::get<std::string>(value);
+        else if (std::holds_alternative<Phrase>(value)) std::cout.write(std::get<Phrase>(value).data(), static_cast<std::streamsize>(std::get<Phrase>(value).size()));
+        else if (std::holds_alternative<bool>(value)) std::cout << (std::get<bool>(value) ? "True" : "False");
+        else if (std::holds_alternative<Order>(value)) std::cout << "[order size=" << std::get<Order>(value).size << "]";
+        else if (std::holds_alternative<std::vector<SimpleValue>>(value)) std::cout << "[order size=" << std::get<std::vector<SimpleValue>>(value).size() << "]";
+        else if (std::holds_alternative<Tome>(value)) std::cout << "{tome size=" << std::get<Tome>(value).size << "}";
+        else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(value)) std::cout << "{tome size=" << std::get<std::unordered_map<std::string, SimpleValue>>(value).size() << "}";
+        std::cout << std::endl;
+    }
 }
 
 void Interpreter::assignVariable(const std::string& name, int value) {

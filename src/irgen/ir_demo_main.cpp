@@ -45,6 +45,9 @@ int main() {
         MangleAndInterner M(jit->getExecutionSession(), jit->getDataLayout());
         SymbolMap symbols;
         symbols[M("ardent_rt_add_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_add_i64), JITSymbolFlags::Exported);
+        symbols[M("ardent_rt_sub_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_sub_i64), JITSymbolFlags::Exported);
+        symbols[M("ardent_rt_mul_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_mul_i64), JITSymbolFlags::Exported);
+        symbols[M("ardent_rt_div_i64")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_div_i64), JITSymbolFlags::Exported);
         symbols[M("ardent_rt_print")]   = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_print), JITSymbolFlags::Exported);
         symbols[M("ardent_rt_version")] = ExecutorSymbolDef(ExecutorAddr::fromPtr(&ardent_rt_version), JITSymbolFlags::Exported);
         symbols[M("__main")]            = ExecutorSymbolDef(ExecutorAddr::fromPtr(&__main), JITSymbolFlags::Exported);
