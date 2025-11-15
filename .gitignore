@@ -33,6 +33,7 @@ numbers_native.exe
 deliverables_*/
 !deliverables_1_4_0/
 deliverables_1_3/
+deliverables_2_0_0/
 ardent-*.zip
 ardent-*.tar.gz
 SHA256SUMS.txt
@@ -59,4 +60,5 @@ Thumbs.db
 ### Additional logs
 ardent_scroll.log
 RELEASE_NOTES_1.4.md
+RELEASE_NOTES_2.0.md
 README_2_0_PLAN.md
