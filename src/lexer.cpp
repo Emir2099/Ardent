@@ -249,6 +249,26 @@ std::vector<Token> Lexer::tokenize() {
         else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+the\\s+(order|tome)", std::regex_constants::icase))) {
             tokens.push_back(parseGenericLet());
         }
+        // Let it be proclaimed (print statement)
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+it\\s+be\\s+proclaimed", std::regex_constants::icase))) {
+            // Skip past this phrase; it will be handled by the LET_PROCLAIMED pattern below
+            // Actually handled further down in the tokenize loop
+            tokens.push_back(Token(TokenType::LET_PROCLAIMED, "Let it be proclaimed"));
+            currentPos += 20; // "Let it be proclaimed"
+            while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
+            if (currentPos < input.length() && input[currentPos] == ':') currentPos++; // consume optional ':'
+            while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+        }
+        // 2.2 Short-form: 'let <identifier>' for typed/untyped variable declarations
+        // Must NOT match "let it" or "let the" (those are handled above)
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+(?!it\\s|the\\s)[a-zA-Z_]", std::regex_constants::icase))) {
+            // Just consume "let" and return LET token; identifier will be lexed separately
+            currentPos += 3; // "let"
+            while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+            tokens.push_back(Token(TokenType::LET, "let"));
+        }
         else if (input.substr(currentPos, 14) == "a number named") {
             tokens.push_back(parseNamed());
         }

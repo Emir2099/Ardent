@@ -1,5 +1,6 @@
 #ifdef ARDENT_ENABLE_LLVM
 #include "compiler_ir.h"
+#include "../types.h"
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/DerivedTypes.h>
 #include <llvm/IR/Constants.h>
@@ -8,14 +9,48 @@
 IRCompiler::IRCompiler(llvm::LLVMContext &c, llvm::Module &m, ArdentRuntime &rt)
     : ctx(c), mod(m), runtime(rt) {}
 
-// Simple local type inference: detect purely numeric expressions composed of
-// number literals and nested numeric binary ops (+,-,*,/). Identifiers,
-// spell invocations, booleans, strings, etc. are treated as non-numeric for
-// inference purposes (they will still be numerically coerced at runtime where
-// semantics allow). This enables direct emission of LLVM integer ops instead
-// of calling runtime shims when both sides are statically numeric.
+// ─── Type-Aware Fast Path Detection ────────────────────────────────────
+// Ardent 2.2: Leverage type annotations and inference for LLVM fast paths.
+// A node is "statically typed whole" if:
+//   1. It has a declared :whole type rune, OR
+//   2. It was inferred as whole during type inference, OR
+//   3. It's a numeric literal or binary op on numeric literals (legacy path)
+
+static bool hasWholeType(ASTNode* n) {
+    if (!n) return false;
+    
+    // Check TypeAnnotation from 2.2 type system
+    const auto& ti = n->typeInfo;
+    if (ti.hasRune && ti.declaredType.kind == ardent::TypeKind::Whole) {
+        return true;
+    }
+    if (ti.inferredType.kind == ardent::TypeKind::Whole) {
+        return true;
+    }
+    
+    return false;
+}
+
+static bool hasTruthType(ASTNode* n) {
+    if (!n) return false;
+    const auto& ti = n->typeInfo;
+    if (ti.hasRune && ti.declaredType.kind == ardent::TypeKind::Truth) {
+        return true;
+    }
+    if (ti.inferredType.kind == ardent::TypeKind::Truth) {
+        return true;
+    }
+    return false;
+}
+
+// Legacy detection: detect purely numeric expressions composed of
+// number literals and nested numeric binary ops (+,-,*,/).
 static bool ardentIsStaticallyNumeric(ASTNode* n) {
     if (!n) return false;
+    
+    // Ardent 2.2: Check type annotations first (faster path)
+    if (hasWholeType(n)) return true;
+    
     if (auto *E = dynamic_cast<Expression*>(n)) {
         return E->token.type == TokenType::NUMBER; // only numeric literal
     }
@@ -173,6 +208,18 @@ llvm::Value* IRCompiler::compileExpr(ASTNode* node) {
 void IRCompiler::compileStmt(ASTNode* node) {
     using namespace llvm;
     if (!node) return;
+
+    // Typed variable declaration (2.2)
+    if (auto *VD = dynamic_cast<VariableDeclaration*>(node)) {
+        std::string name = VD->varName;
+        auto *slot = getOrCreateVar(name);
+        Value *R = compileExpr(VD->initializer.get());
+        
+        // Type-aware fast path: if declaredType is known, we can use typed storage
+        // For now, store into the generic ArdentValue slot (future: typed alloca)
+        builder.CreateStore(R, slot);
+        return;
+    }
 
     // Variable declaration / assignment: BinaryExpression with op IS_OF
     if (auto *B = dynamic_cast<BinaryExpression*>(node)) {

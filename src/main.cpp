@@ -4,6 +4,8 @@
 #include "arena.h"
 #include "interpreter.h"
 #include "optimizer.h"
+#include "type_infer.h"
+#include "type_check.h"
 #include <memory>
 #include <vector>
 #include <fstream>
@@ -404,6 +406,9 @@ int main(int argc, char** argv) {
     bool chroniclesOnly = false; // run only the Chronicle Rites demo
     bool quietAssign = false; // --quiet-assign suppress variable assignment logs
     bool noOptimize = false; // --no-optimize disable constant folding / purity analysis
+    bool wantTypeCheck = false;    // --type-check run type checker and show errors
+    bool wantDumpTypes = false;    // --dump-types show inferred types for all expressions
+    bool wantExplainTypes = false; // --explain-types verbose type inference walkthrough
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         // Reserve '-o' for output path; oracle mode uses only long form now
@@ -434,6 +439,9 @@ int main(int argc, char** argv) {
         else if (arg == "--aot") wantAOT = true;
         else if (arg == "--target" && i + 1 < argc) { targetOverride = argv[++i]; }
         else if (arg == "--no-optimize" || arg == "--no-opt") noOptimize = true;
+        else if (arg == "--type-check" || arg == "--check-types") wantTypeCheck = true;
+        else if (arg == "--dump-types") wantDumpTypes = true;
+        else if (arg == "--explain-types") wantExplainTypes = true;
         // (Removed duplicate -o handler for AOT/compile)
         else if (arg == "--color") colorize = true;
         else if (arg == "--no-color") colorize = false;
@@ -483,10 +491,82 @@ int main(int argc, char** argv) {
         std::cout << "  --version            Display Ardent version and codename.\n";
         std::cout << "  --quiet-assign       Suppress 'Variable assigned:' lines (test parity).\n";
         std::cout << "  --no-optimize        Disable constant folding / purity analysis.\n";
+        std::cout << "\n  Type System (2.2):\n";
+        std::cout << "  --type-check         Run type checker and display errors/warnings.\n";
+        std::cout << "  --dump-types         Show inferred types for all expressions.\n";
+        std::cout << "  --explain-types      Verbose type inference walkthrough.\n";
         return 0;
     }
     // Apply quiet assignment flag globally so interpreter paths honor it
     extern bool gQuietAssign; gQuietAssign = quietAssign;
+    
+    // ─── Type Checking Mode (Ardent 2.2) ───────────────────────────────────
+    if (wantTypeCheck || wantDumpTypes || wantExplainTypes) {
+        std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        if (path.empty()) { std::cerr << "Provide a scroll path for type checking." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        // Strip optional Prologue before lexing
+        std::optional<ScrollPrologue> metaOpt;
+        source = stripPrologue(source, metaOpt);
+        // Parse
+        Lexer lx(source);
+        auto toks = lx.tokenize();
+        Arena astArena;
+        Parser parser(std::move(toks), &astArena);
+        auto ast = parser.parse();
+        if (!ast) { std::cerr << "Error: Parser returned NULL AST!" << std::endl; return 1; }
+        
+        // Collect statements into vector
+        std::vector<std::shared_ptr<ASTNode>> stmts;
+        if (auto* block = dynamic_cast<BlockStatement*>(ast.get())) {
+            for (auto& s : block->statements) {
+                stmts.push_back(s);
+            }
+        }
+        
+        // Run type inference
+        bool verbose = wantExplainTypes;
+        ardent::InferenceContext inferCtx = ardent::inferTypes(stmts, verbose);
+        
+        // Print inference messages if verbose
+        if (wantExplainTypes) {
+            std::cout << "═══ Type Inference Walkthrough ═══\n\n";
+            for (const auto& w : inferCtx.warnings) {
+                std::cout << w << "\n";
+            }
+            for (const auto& e : inferCtx.errors) {
+                std::cout << e << "\n";
+            }
+            if (inferCtx.warnings.empty() && inferCtx.errors.empty()) {
+                std::cout << "No type inference notes.\n";
+            }
+            std::cout << "\n";
+        }
+        
+        // Dump types for all statements
+        if (wantDumpTypes) {
+            std::cout << "═══ Type Dump ═══\n\n";
+            for (const auto& stmt : stmts) {
+                std::cout << "  " << ardent::explainType(stmt.get(), inferCtx) << "\n";
+            }
+            std::cout << "\n";
+        }
+        
+        // Run type checker
+        if (wantTypeCheck) {
+            ardent::TypeChecker checker(inferCtx);
+            ardent::TypeCheckResult result = checker.check(stmts);
+            
+            std::cout << "═══ Type Check Results ═══\n\n";
+            std::cout << result.formatAll();
+            
+            return result.success() ? 0 : 1;
+        }
+        
+        return 0;
+    }
+    
     if (wantBench) {
         // --bench <file>: execute scroll, measure time and arena allocations
         std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }

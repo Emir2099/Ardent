@@ -1,6 +1,7 @@
 #include "parser.h"
 #include "token.h"
 #include "ast.h"
+#include "types.h"
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -390,21 +391,63 @@ std::shared_ptr<ASTNode> Parser::parseFunctionCall() {
 
 // Parse a variable declaration.
 // After encountering LET, skip filler tokens until we find NAMED.
+// 2.2 Type Runes: supports name:type syntax (e.g., x:whole, name:phrase)
+// Also supports short-form: let x:type be value
 std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
-    // Skip until we find either a NAMED token or identifier 'named'
+    ardent::Type declaredType = ardent::Type::unknown();
+    
+    // 2.2 Short-form syntax: let <name>[:type] be <value>
+    // Check if next token is directly an identifier (short form)
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+        Token varNameTok = advance();
+        std::string varName = varNameTok.value;
+        
+        // Check for :type rune after variable name
+        if (!isAtEnd() && peek().type == TokenType::COLON) {
+            advance(); // consume ':'
+            Token typeTok = consume(TokenType::IDENTIFIER, "Expected type name after ':'");
+            if (typeTok.type != TokenType::INVALID) {
+                auto parsedType = ardent::parseTypeRune(typeTok.value);
+                if (parsedType) {
+                    declaredType = *parsedType;
+                } else {
+                    std::cerr << "Warning: Unknown type rune '" << typeTok.value 
+                              << "' at position " << current << ", treating as dynamic" << std::endl;
+                }
+            }
+        }
+        
+        // Check for 'be' keyword
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "be") {
+            advance(); // consume 'be'
+            
+            // Parse RHS expression
+            auto rhsNode = parseExpression();
+            
+            // Return VariableDeclaration node
+            return node<VariableDeclaration>(varName, rhsNode, declaredType);
+        }
+        
+        // Not short form - rewind and try verbose form
+        current = current - 1; // back to identifier
+        if (declaredType.kind != ardent::TypeKind::Unknown) {
+            current -= 2; // also back past : and type
+        }
+    }
+    
+    // Verbose/legacy form: Skip until we find either a NAMED token or identifier 'named'
     while (!isAtEnd() && !(peek().type == TokenType::NAMED || (peek().type == TokenType::IDENTIFIER && peek().value == "named"))) {
         advance();
     }
-    // Track declared type from the NAMED token when available
-    enum class DeclTy { Unknown, Number, Phrase, Truth, Order, Tome };
-    DeclTy declared = DeclTy::Unknown;
+    // Track declared type from the NAMED token when available (legacy syntax)
+    // declaredType already declared above
     if (peek().type == TokenType::NAMED) {
         Token namedTok = advance();
-        if (namedTok.value == "a number named") declared = DeclTy::Number;
-        else if (namedTok.value == "a phrase named") declared = DeclTy::Phrase;
-        else if (namedTok.value == "a truth named") declared = DeclTy::Truth;
-        else if (namedTok.value == "an order named") declared = DeclTy::Order;
-        else if (namedTok.value == "a tome named") declared = DeclTy::Tome;
+        if (namedTok.value == "a number named") declaredType = ardent::Type::whole();
+        else if (namedTok.value == "a phrase named") declaredType = ardent::Type::phrase();
+        else if (namedTok.value == "a truth named") declaredType = ardent::Type::truth();
+        else if (namedTok.value == "an order named") declaredType = ardent::Type::order(ardent::Type::unknown());
+        else if (namedTok.value == "a tome named") declaredType = ardent::Type::tome(ardent::Type::unknown(), ardent::Type::unknown());
     } else if (peek().type == TokenType::IDENTIFIER && peek().value == "named") {
         advance();
     } else {
@@ -412,6 +455,23 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
         return nullptr;
     }
     Token varName = consume(TokenType::IDENTIFIER, "Expected variable name after 'named'");
+    
+    // 2.2 Type Runes: check for :type syntax after variable name
+    if (!isAtEnd() && peek().type == TokenType::COLON) {
+        advance(); // consume ':'
+        Token typeTok = consume(TokenType::IDENTIFIER, "Expected type name after ':'");
+        if (typeTok.type != TokenType::INVALID) {
+            auto parsedType = ardent::parseTypeRune(typeTok.value);
+            if (parsedType) {
+                // Type rune overrides legacy "a number named" syntax
+                declaredType = *parsedType;
+            } else {
+                std::cerr << "Warning: Unknown type rune '" << typeTok.value 
+                          << "' at position " << current << ", treating as dynamic" << std::endl;
+            }
+        }
+    }
+    
     consume(TokenType::IS_OF, "Expected 'is of' after variable name");
     // Accept either a literal (STRING/BOOLEAN/NUMBER), a Chronicle read, or a full expression
     std::shared_ptr<ASTNode> rhsNode;
@@ -452,33 +512,27 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     }
 
     // Enforce declared type only for simple literal cases (expressions validated at runtime)
-    if (simpleLiteral) {
+    if (simpleLiteral && declaredType.isKnown()) {
         auto mismatch = [&](const char* expected) {
-            std::cerr << "TypeError: Expected " << expected << " but got "
-                      << tokenTypeToString(value.type) << " for variable '" << varName.value << "'" << std::endl;
+            std::cerr << "TypeError: The rune declares " << varName.value << " as " << expected
+                      << ", yet fate reveals a " << tokenTypeToString(value.type) << " at this position." << std::endl;
         };
-        if (declared == DeclTy::Number && value.type != TokenType::NUMBER) {
-            mismatch("number");
+        if (declaredType.isNumeric() && value.type != TokenType::NUMBER) {
+            mismatch("whole");
             return nullptr;
         }
-        if (declared == DeclTy::Phrase && value.type != TokenType::STRING) {
+        if (declaredType.isString() && value.type != TokenType::STRING) {
             mismatch("phrase");
             return nullptr;
         }
-        if (declared == DeclTy::Truth && value.type != TokenType::BOOLEAN) {
+        if (declaredType.isBoolean() && value.type != TokenType::BOOLEAN) {
             mismatch("truth");
             return nullptr;
         }
-        if (declared == DeclTy::Order || declared == DeclTy::Tome) {
-            std::cerr << "TypeError: Complex types must be initialized with proper literals for variable '" << varName.value << "'" << std::endl;
-            return nullptr;
-        }
     }
-    return node<BinaryExpression>(
-        node<Expression>(varName),
-        Token(TokenType::IS_OF, "is of"),
-        rhsNode
-    );
+    
+    // Return proper VariableDeclaration node (2.2)
+    return node<VariableDeclaration>(varName.value, rhsNode, declaredType);
 }
 
 // Parse a while loop
@@ -908,10 +962,33 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
         consume(TokenType::IDENTIFIER, "Expected spell name after 'spell named'");
         return nullptr;
     }
+    
+    // 2.2 Type Runes: check for return type annotation after spell name (name:returnType)
+    ardent::Type returnType = ardent::Type::unknown();
+    if (!isAtEnd() && peek().type == TokenType::COLON) {
+        // This could be either :returnType or the body start colon
+        // Peek ahead: if next is identifier that's a type name, it's the return type
+        size_t save = current;
+        advance(); // consume ':'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+            auto maybeType = ardent::parseTypeRune(peek().value);
+            if (maybeType) {
+                advance(); // consume type name
+                returnType = *maybeType;
+            } else {
+                // Not a type, restore position (it's the body colon)
+                current = save;
+            }
+        } else {
+            current = save;
+        }
+    }
+    
     // Expect 'is cast upon'
     if (!match(TokenType::SPELL_CAST)) { std::cerr << "Error: Expected 'is cast upon' in spell definition" << std::endl; return nullptr; }
     // Parameter parsing: sequence of descriptor tokens ending with KNOWN_AS name pairs until ':'
     std::vector<std::string> params;
+    std::vector<ardent::Type> paramTypes; // 2.2: param types
     while (!isAtEnd() && peek().type != TokenType::COLON) {
         // Consume descriptor words until KNOWN_AS
         while (!isAtEnd() && peek().type != TokenType::KNOWN_AS && peek().type != TokenType::COLON) {
@@ -920,15 +997,45 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
         if (peek().type == TokenType::COLON) break;
         if (!match(TokenType::KNOWN_AS)) { std::cerr << "Error: Expected 'known as' before parameter name" << std::endl; return nullptr; }
         Token paramName = consume(TokenType::IDENTIFIER, "Expected parameter name after 'known as'");
+        
+        // 2.2 Type Runes: check for :type after param name
+        // Must distinguish between "name:type" and "name:" (body separator)
+        ardent::Type paramType = ardent::Type::unknown();
+        if (!isAtEnd() && peek().type == TokenType::COLON) {
+            // Peek ahead: if the next token after COLON is an identifier that's a valid type, consume it
+            size_t save = current;
+            advance(); // consume ':'
+            if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+                auto maybeType = ardent::parseTypeRune(peek().value);
+                if (maybeType) {
+                    paramType = *maybeType;
+                    advance(); // consume type name
+                } else {
+                    // Not a type, it's the body separator colon - restore position
+                    current = save;
+                }
+            } else {
+                // Nothing after colon means it's the body separator
+                current = save;
+            }
+        }
+        
         params.push_back(paramName.value);
+        paramTypes.push_back(paramType);
     }
     consume(TokenType::COLON, "Expected ':' to start spell body");
     // Parse indented body lines until next SPELL_DEF/SPELL_CALL or end. We'll accumulate statements until a blank or termination.
     std::vector<std::shared_ptr<ASTNode>> bodyStmts;
+    bool seenReturn = false;
     while (!isAtEnd()) {
         // Stop if next token begins another top-level construct
         TokenType t = peek().type;
         if (t == TokenType::SPELL_DEF || t == TokenType::SPELL_CALL || t == TokenType::SHOULD) {
+            break;
+        }
+        // 2.2: Stop if we see short-form 'let' AFTER a return statement 
+        // This indicates top-level code after the spell definition
+        if (seenReturn && t == TokenType::LET && peek().value == "let") {
             break;
         }
         if (t == TokenType::LET_PROCLAIMED) {
@@ -936,18 +1043,23 @@ std::shared_ptr<ASTNode> Parser::parseSpellDefinition() {
             if (current + 1 < tokens.size() && tokens[current + 1].type == TokenType::SPELL_CALL) {
                 break;
             }
+            // Also stop if we've seen a return (top-level print after spell)
+            if (seenReturn) {
+                break;
+            }
         }
         if (t == TokenType::RETURN) {
             advance(); // consume RETURN
             auto retExpr = parseExpression();
             bodyStmts.push_back(node<ReturnStatement>(retExpr));
+            seenReturn = true;
             // After a return, optionally continue to allow trailing statements, but they won't execute after return.
             continue;
         }
         bodyStmts.push_back(parseStatement());
     }
     auto block = node<BlockStatement>(bodyStmts);
-    return node<SpellStatement>(spellName.value, params, block);
+    return node<SpellStatement>(spellName.value, params, paramTypes, returnType, block);
 }
 
 // Parse invocation: Invoke the spell greet upon "Aragorn".

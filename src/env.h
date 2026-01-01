@@ -6,6 +6,36 @@
 #include <utility>
 #include "arena.h"
 #include "phrase.h"
+#include "types.h"
+
+// ─── Typed Symbol Info ─────────────────────────────────────────────────
+// Used by the type checker and inference pass to track variable/symbol types.
+// Each symbol entry carries its declared (if :rune present) and inferred types.
+struct SymbolInfo {
+    ardent::Type declaredType;   // From :rune annotation (or Unknown if absent)
+    ardent::Type inferredType;   // Inferred during type inference pass
+    bool isMutable {true};       // false for 'bestow' constants
+    bool isInitialized {false};  // true after assignment
+    int declarationLine {0};     // Source location for diagnostics
+    
+    SymbolInfo() 
+        : declaredType(ardent::Type::unknown())
+        , inferredType(ardent::Type::unknown()) {}
+    
+    SymbolInfo(ardent::Type declared, bool mut = true, int line = 0)
+        : declaredType(declared)
+        , inferredType(ardent::Type::unknown())
+        , isMutable(mut)
+        , isInitialized(false)
+        , declarationLine(line) {}
+    
+    // Resolve type: prefer declared if present, else inferred, else Unknown
+    ardent::Type resolvedType() const {
+        if (declaredType.kind != ardent::TypeKind::Unknown) return declaredType;
+        if (inferredType.kind != ardent::TypeKind::Unknown) return inferredType;
+        return ardent::Type::unknown();
+    }
+};
 
 // A compact key stored in arena (no std::string)
 struct KeyRef {

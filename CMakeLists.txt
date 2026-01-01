@@ -24,7 +24,10 @@ add_executable(ardent
   src/parser.cpp
   src/interpreter.cpp
   src/scroll_loader.cpp
-  src/optimizer.cpp)
+  src/optimizer.cpp
+  src/types.cpp
+  src/type_infer.cpp
+  src/type_check.cpp)
   add_executable(ardent_tests
     tests/phase9_tests.cpp
     src/lexer.cpp
@@ -32,6 +35,9 @@ add_executable(ardent
     src/interpreter.cpp
     src/scroll_loader.cpp
     src/optimizer.cpp
+    src/types.cpp
+    src/type_infer.cpp
+    src/type_check.cpp
     src/runtime/ardent_runtime.cpp
     src/irgen/compiler_ir.cpp)
   target_include_directories(ardent_tests PRIVATE src)

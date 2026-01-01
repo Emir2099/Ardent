@@ -6,6 +6,7 @@
 #include "token.h"
 #include "ast.h"
 #include "arena.h"
+#include "types.h"
 
 class Parser {
 private:

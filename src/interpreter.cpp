@@ -5,6 +5,7 @@
 bool gQuietAssign = false;
 #include "lexer.h"
 #include "parser.h"
+#include "types.h"
 #include <functional>
 #include <memory>
 #include <vector>
@@ -823,6 +824,29 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     // Evaluate a simple expression.
     else if (auto expr = std::dynamic_pointer_cast<Expression>(ast)) {
         std::cout << "Evaluating expression: " << expr->token.value << std::endl;
+    }
+    // Handle VariableDeclaration (2.2 Type Runes)
+    else if (auto varDecl = std::dynamic_pointer_cast<VariableDeclaration>(ast)) {
+        Value rhs = evaluateValue(varDecl->initializer);
+        // If type is declared, validate at runtime for gradual typing
+        if (varDecl->declaredType.isKnown() && !varDecl->declaredType.isAny()) {
+            // Runtime type check for gradual typing boundary
+            bool typeOk = true;
+            std::string actual;
+            if (varDecl->declaredType.isNumeric()) {
+                if (!std::holds_alternative<int>(rhs)) { typeOk = false; actual = "non-number"; }
+            } else if (varDecl->declaredType.isBoolean()) {
+                if (!std::holds_alternative<bool>(rhs)) { typeOk = false; actual = "non-truth"; }
+            } else if (varDecl->declaredType.isString()) {
+                if (!std::holds_alternative<Phrase>(rhs) && !std::holds_alternative<std::string>(rhs)) { typeOk = false; actual = "non-phrase"; }
+            }
+            if (!typeOk) {
+                std::cerr << "RuntimeTypeError: The rune declares " << varDecl->varName 
+                          << " as " << ardent::typeToString(varDecl->declaredType)
+                          << ", yet fate reveals a " << actual << std::endl;
+            }
+        }
+        assignVariableAny(varDecl->varName, rhs);
     }
     // Handle binary expressions (used for assignments and conditions).
     else if (auto binExpr = std::dynamic_pointer_cast<BinaryExpression>(ast)) {

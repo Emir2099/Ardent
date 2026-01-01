@@ -6,9 +6,24 @@
 #include <vector>
 #include <unordered_map>
 #include "token.h"
+#include "types.h"
+
+// Type annotation for AST nodes (2.2 Type Runes)
+struct TypeAnnotation {
+    ardent::Type declaredType;   // from :rune syntax (Unknown if absent)
+    ardent::Type inferredType;   // computed by type inference pass
+    bool hasRune = false;        // true if user wrote :type
+    int runeLine = -1;           // line number of rune for diagnostics
+
+    TypeAnnotation() 
+        : declaredType(ardent::Type::unknown())
+        , inferredType(ardent::Type::unknown()) {}
+};
 
 class ASTNode {
 public:
+    TypeAnnotation typeInfo;     // type annotation for this node
+    int sourceLine = -1;         // source line for error reporting
     virtual ~ASTNode() = default;
 };
 
@@ -25,6 +40,10 @@ class Expression : public ASTNode {
 public:
     Token token;
     Expression(Token token) : token(token) {}
+    Expression(Token token, ardent::Type declType) : token(token) {
+        typeInfo.declaredType = declType;
+        typeInfo.hasRune = declType.isKnown();
+    }
 };
 
 // Represents binary operations (e.g., assignments)
@@ -101,9 +120,16 @@ class SpellStatement : public ASTNode {
 public:
     std::string spellName;
     std::vector<std::string> params;
+    std::vector<ardent::Type> paramTypes;  // 2.2: declared param types (Unknown if untyped)
+    ardent::Type returnType;               // 2.2: declared return type (Unknown if untyped)
     std::shared_ptr<BlockStatement> body;
     SpellStatement(std::string name, std::vector<std::string> params, std::shared_ptr<BlockStatement> body)
-        : spellName(std::move(name)), params(std::move(params)), body(std::move(body)) {}
+        : spellName(std::move(name)), params(std::move(params)), returnType(ardent::Type::unknown()), body(std::move(body)) {}
+    SpellStatement(std::string name, std::vector<std::string> params, 
+                   std::vector<ardent::Type> ptypes, ardent::Type retType,
+                   std::shared_ptr<BlockStatement> body)
+        : spellName(std::move(name)), params(std::move(params)), 
+          paramTypes(std::move(ptypes)), returnType(std::move(retType)), body(std::move(body)) {}
 };
 
 // Spell invocation: call a previously defined spell with argument expressions
@@ -129,6 +155,23 @@ class ReturnStatement : public ASTNode {
 public:
     std::shared_ptr<ASTNode> expression;
     explicit ReturnStatement(std::shared_ptr<ASTNode> expr) : expression(std::move(expr)) {}
+};
+
+// Variable declaration with optional type rune (2.2)
+// Syntax: Let it be known, a number named x:whole is of 5 winters.
+class VariableDeclaration : public ASTNode {
+public:
+    std::string varName;
+    std::shared_ptr<ASTNode> initializer;
+    ardent::Type declaredType;  // from :rune or "a number named" etc.
+    bool isMutable = true;      // future: const declarations
+
+    VariableDeclaration(std::string name, std::shared_ptr<ASTNode> init, 
+                        ardent::Type declType = ardent::Type::unknown())
+        : varName(std::move(name)), initializer(std::move(init)), declaredType(std::move(declType)) {
+        typeInfo.declaredType = declaredType;
+        typeInfo.hasRune = declaredType.isKnown();
+    }
 };
 
 // Represents an if-else statement
