@@ -396,6 +396,7 @@ When the poet’s craft becomes a scholar’s tool.
 - `--bench` runs micro-benchmarks with readable timing.
 - `--lint` warns on simple style/structure issues.
 - `--pretty` formats scrolls to a canonical layout (stub).
+- `--no-optimize` disables the 2.1 optimizer (constant folding / purity analysis / partial evaluation).
 - `--banner` prints a clean banner (screenshot-friendly).
 - `--scrolls` lists available stdlib scrolls.
 
@@ -498,6 +499,28 @@ Example on Windows (MinGW toolchain present):
 Notes:
 - On Windows Ardent prefers MinGW `g++` to link with the static runtime; if unavailable, it falls back to `lld-link` (requires proper Windows SDK/MSVC `LIB` paths).
 - Runtime debug prints can be silenced later; they’re helpful while validating the AOT pipeline.
+
+---
+
+## 🌠 Ardent 2.1 — Optimizing Embers
+
+> A semantic pass over the flame: faster scrolls, same truths.
+
+This release adds a safe, default-on optimizer pipeline for the classic interpreter / VM compile path.
+
+### What’s Implemented
+
+- **AST Constant Folding:** Compile-time folding of numeric/boolean/string expressions.
+- **Pure Spell Detection:** A conservative purity analysis that marks spells pure when they perform no I/O, no chronicle effects, and only call other pure spells.
+- **Partial Evaluation:** If a pure spell is invoked with constant arguments, the invocation can be evaluated at compile time and replaced with a literal.
+- **Cached Dispatch (VM):** A lightweight call-site cache for `CALL` to reduce repeated dynamic dispatch overhead.
+
+### Control Flag
+
+- `--no-optimize` / `--no-opt`: Disable the optimizer pipeline (useful for debugging or bisecting behavior).
+
+### Release Notes
+
 
 ---
 
