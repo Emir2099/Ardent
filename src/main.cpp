@@ -3,6 +3,7 @@
 #include "parser.h"
 #include "arena.h"
 #include "interpreter.h"
+#include "optimizer.h"
 #include <memory>
 #include <vector>
 #include <fstream>
@@ -77,7 +78,7 @@ static std::string stripPrologue(const std::string& src, std::optional<ScrollPro
     return out.str();
 }
 
-static void runArdentProgram(const std::string& code, const std::string& sourceName = std::string("<inline>")) {
+static void runArdentProgram(const std::string& code, const std::string& sourceName = std::string("<inline>"), bool enableOpt = true) {
     std::optional<ScrollPrologue> metaOpt;
     std::string filtered = stripPrologue(code, metaOpt);
     Lexer lexer(filtered);
@@ -88,6 +89,11 @@ static void runArdentProgram(const std::string& code, const std::string& sourceN
     if (!ast) {
         std::cerr << "Error: Parser returned NULL AST!" << std::endl;
         return;
+    }
+    // Run optimizer passes (constant folding, purity analysis, partial evaluation)
+    if (enableOpt) {
+        opt::Optimizer optimizer;
+        ast = optimizer.optimize(ast);
     }
     Interpreter interpreter;
     interpreter.setSourceName(sourceName);
@@ -397,6 +403,7 @@ int main(int argc, char** argv) {
     bool poetic = false; // default off
     bool chroniclesOnly = false; // run only the Chronicle Rites demo
     bool quietAssign = false; // --quiet-assign suppress variable assignment logs
+    bool noOptimize = false; // --no-optimize disable constant folding / purity analysis
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         // Reserve '-o' for output path; oracle mode uses only long form now
@@ -426,6 +433,7 @@ int main(int argc, char** argv) {
         else if (arg == "--emit-o") wantEmitObject = true;
         else if (arg == "--aot") wantAOT = true;
         else if (arg == "--target" && i + 1 < argc) { targetOverride = argv[++i]; }
+        else if (arg == "--no-optimize" || arg == "--no-opt") noOptimize = true;
         // (Removed duplicate -o handler for AOT/compile)
         else if (arg == "--color") colorize = true;
         else if (arg == "--no-color") colorize = false;
@@ -474,6 +482,7 @@ int main(int argc, char** argv) {
         std::cout << "  --banner             Print logo + version only.\n";
         std::cout << "  --version            Display Ardent version and codename.\n";
         std::cout << "  --quiet-assign       Suppress 'Variable assigned:' lines (test parity).\n";
+        std::cout << "  --no-optimize        Disable constant folding / purity analysis.\n";
         return 0;
     }
     // Apply quiet assignment flag globally so interpreter paths honor it
@@ -908,7 +917,7 @@ int main(int argc, char** argv) {
         std::ifstream f(path);
         if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'.\n"; return 1; }
         std::string code((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-        runArdentProgram(code, path);
+        runArdentProgram(code, path, !noOptimize);
         return 0;
     }
 
@@ -930,6 +939,11 @@ int main(int argc, char** argv) {
         Parser parser(std::move(toks), &astArena);
         auto ast = parser.parse();
         if (!ast) { std::cerr << "Error: Parser returned NULL AST!\n"; return 1; }
+        // Apply optimizer passes before bytecode compilation
+        if (!noOptimize) {
+            opt::Optimizer optimizer;
+            ast = optimizer.optimize(ast);
+        }
         avm::CompilerAVM cavm;
         avm::Chunk chunk = cavm.compile(ast);
         if (!avm_io::save_chunk(chunk, compileOutPath)) { std::cerr << "Failed to save AVM file to '" << compileOutPath << "'\n"; return 1; }

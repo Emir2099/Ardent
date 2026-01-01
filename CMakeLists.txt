@@ -23,13 +23,15 @@ add_executable(ardent
   src/lexer.cpp
   src/parser.cpp
   src/interpreter.cpp
-  src/scroll_loader.cpp)
+  src/scroll_loader.cpp
+  src/optimizer.cpp)
   add_executable(ardent_tests
     tests/phase9_tests.cpp
     src/lexer.cpp
     src/parser.cpp
     src/interpreter.cpp
     src/scroll_loader.cpp
+    src/optimizer.cpp
     src/runtime/ardent_runtime.cpp
     src/irgen/compiler_ir.cpp)
   target_include_directories(ardent_tests PRIVATE src)

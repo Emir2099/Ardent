@@ -6,10 +6,32 @@
 #include <string>
 #include <optional>
 #include <iostream>
+#include <unordered_map>
+#include <functional>
 #include "opcode.h"
 #include "bytecode.h"
 
 namespace avm {
+
+// ============================================================================
+// Function Table Entry for Cached Dispatch
+// ============================================================================
+struct FunctionEntry {
+    uint16_t funcId;           // Function ID in bytecode
+    size_t entryPoint;         // Cached entry point (bytecode offset)
+    uint8_t arity;             // Number of arguments
+    bool resolved{false};      // Has this entry been resolved?
+};
+
+// ============================================================================
+// Call Site Cache for Inline Caching
+// ============================================================================
+struct CallSiteCache {
+    uint16_t funcId{0xFFFF};   // Cached function ID (0xFFFF = uninitialized)
+    size_t entryPoint{0};      // Cached entry point
+    uint8_t arity{0};          // Cached arity
+    uint32_t hitCount{0};      // Number of cache hits (for profiling)
+};
 
 class VM {
 public:
@@ -18,8 +40,33 @@ public:
         bool ok{true};
     };
 
-    // Clears all persisted variable slots
-    void reset() { slots_.clear(); }
+    // Clears all persisted variable slots and caches
+    void reset() {
+        slots_.clear();
+        callSiteCache_.clear();
+        functionTable_.clear();
+    }
+
+    // Register a function in the function table
+    void registerFunction(uint16_t funcId, size_t entryPoint, uint8_t arity) {
+        FunctionEntry entry;
+        entry.funcId = funcId;
+        entry.entryPoint = entryPoint;
+        entry.arity = arity;
+        entry.resolved = true;
+        functionTable_[funcId] = entry;
+    }
+
+    // Get cache statistics
+    size_t getCacheHits() const {
+        size_t total = 0;
+        for (const auto& [offset, cache] : callSiteCache_) {
+            total += cache.hitCount;
+        }
+        return total;
+    }
+
+    size_t getCacheMisses() const { return cacheMisses_; }
 
     Result run(const Chunk& chunk) {
         const auto& code = chunk.code;
@@ -290,6 +337,60 @@ public:
                     }
                     break;
                 }
+                case OpCode::OP_CALL: {
+                    // OP_CALL format: u16 funcId, u8 argc
+                    if (ip + 2 >= code.size()) return {std::nullopt, false};
+                    size_t callSiteOffset = ip - 1; // The opcode position
+                    uint16_t funcId = read_u16(&code[ip]); ip += 2;
+                    uint8_t argc = code[ip++];
+
+                    // Check call site cache first
+                    auto cacheIt = callSiteCache_.find(callSiteOffset);
+                    if (cacheIt != callSiteCache_.end() && cacheIt->second.funcId == funcId) {
+                        // Cache hit! Use cached entry point
+                        CallSiteCache& cache = cacheIt->second;
+                        cache.hitCount++;
+
+                        // Verify arity matches
+                        if (cache.arity != argc) {
+                            return {std::nullopt, false}; // Arity mismatch
+                        }
+
+                        // For now, we don't have separate function chunks,
+                        // but the cache infrastructure is ready for when we do.
+                        // In a full implementation, we would:
+                        // 1. Save return address
+                        // 2. Jump to cache.entryPoint
+                        // 3. Execute function code
+                        // 4. Return to saved address
+                    } else {
+                        // Cache miss - resolve function
+                        cacheMisses_++;
+
+                        auto funcIt = functionTable_.find(funcId);
+                        if (funcIt == functionTable_.end()) {
+                            return {std::nullopt, false}; // Unknown function
+                        }
+
+                        const FunctionEntry& func = funcIt->second;
+                        if (func.arity != argc) {
+                            return {std::nullopt, false}; // Arity mismatch
+                        }
+
+                        // Populate cache for next time
+                        CallSiteCache newCache;
+                        newCache.funcId = funcId;
+                        newCache.entryPoint = func.entryPoint;
+                        newCache.arity = argc;
+                        newCache.hitCount = 0;
+                        callSiteCache_[callSiteOffset] = newCache;
+                    }
+
+                    // Placeholder: In a full implementation, we would execute the function here.
+                    // For now, push a dummy return value.
+                    push(0);
+                    break;
+                }
                 case OpCode::OP_HALT: {
                     std::optional<Value> out;
                     if (!stack.empty()) out = stack.back();
@@ -305,6 +406,9 @@ public:
     }
 private:
     std::vector<Value> slots_;
+    std::unordered_map<size_t, CallSiteCache> callSiteCache_;  // Call site offset -> cache
+    std::unordered_map<uint16_t, FunctionEntry> functionTable_; // Function ID -> entry
+    size_t cacheMisses_{0};
 };
 
 } 
