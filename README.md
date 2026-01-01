@@ -648,6 +648,59 @@ inscribe "heroes@2.0"     § Version-pinned import
 
 ---
 
+## 📜 Ardent 2.4 — Living Chronicles (Streams & Async Foundation)
+
+> A program that listens, waits, and responds.
+
+Ardent 2.4 introduces buffered file streams with the Scribe system and lays the foundation for asynchronous execution.
+
+### Scribe System (Streams)
+
+```ardent
+§ Open a scribe for writing
+Let a scribe named logfile be bound to "output.txt"
+
+§ Write to the scribe
+Write the verse "A new tale begins..." into logfile
+
+§ Close the scribe
+Close the scribe logfile
+```
+
+### Reading from Streams
+
+```ardent
+§ Read all lines from a file
+Read from scribe "input.txt" as line:
+    Let it be proclaimed: line
+Done
+```
+
+### Time Scroll Enhancements
+
+```ardent
+§ Import the upgraded time scroll
+From the scroll of time, take now, sleep_ms, measure
+
+§ High-resolution timing
+Let it be known, a number named start is of measure
+§ ... perform operations ...
+Let it be known, a number named elapsed is of measure
+Let it be proclaimed: "Elapsed: " + (elapsed - start) + "ms"
+
+§ Millisecond sleep
+Invoke the spell sleep_ms upon 100  § Sleep for 100ms
+```
+
+### Async Foundation (Await Rites)
+
+```ardent
+§ Await syntax (currently synchronous, async in future)
+Await the omen of some_spell
+```
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

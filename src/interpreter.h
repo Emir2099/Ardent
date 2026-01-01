@@ -7,6 +7,7 @@
 #include <functional>
 #include <filesystem>
 #include <optional>
+#include <fstream>
 #include "scroll_loader.h"
 #include "ast.h"
 #include "arena.h"
@@ -94,6 +95,10 @@ private:
     std::optional<ScrollPrologue> currentPrologue_{};
     Module loadModule(const std::string& path);
     Module loadModuleLogical(const std::string& logicalName);
+    
+    // Stream scribes (2.4 Living Chronicles)
+    std::unordered_map<std::string, std::shared_ptr<std::fstream>> scribes;
+    
     // Native functions
     std::unordered_map<std::string, NativeFunc> nativeRegistry;
     int evaluateExpr(std::shared_ptr<ASTNode> expr); 

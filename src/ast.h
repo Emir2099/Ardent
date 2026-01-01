@@ -289,6 +289,93 @@ class DoWhileLoop : public ASTNode {
                     TokenType stepDir)
             : body(body), condition(condition), update(update), loopVar(loopVar), stepDirection(stepDir) {}
     };
+
+// ============================================================================
+// ASYNC / AWAIT NODES (2.4 Living Chronicles)
+// ============================================================================
+
+// Await expression: "Await the omen of <expr>"
+// Suspends execution until the promise/task completes
+class AwaitExpression : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> expression;  // The async expression to await
+    
+    explicit AwaitExpression(std::shared_ptr<ASTNode> expr)
+        : expression(std::move(expr)) {}
+};
+
+// Spawn a background task: "Summon task <expr>"
+class SpawnExpression : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> expression;  // The expression to run as a task
+    
+    explicit SpawnExpression(std::shared_ptr<ASTNode> expr)
+        : expression(std::move(expr)) {}
+};
+
+// ============================================================================
+// STREAM NODES (2.4 Living Chronicles)
+// ============================================================================
+
+// Open a scribe (file stream): "Let a scribe be opened upon <path> [for reading/writing]"
+class ScribeDeclaration : public ASTNode {
+public:
+    std::string scribeName;               // Variable name for the scribe
+    std::shared_ptr<ASTNode> pathExpr;    // Path expression (string)
+    std::string mode;                     // "read", "write", "append", "readwrite"
+    
+    ScribeDeclaration(std::string name, std::shared_ptr<ASTNode> path, std::string m)
+        : scribeName(std::move(name)), pathExpr(std::move(path)), mode(std::move(m)) {}
+};
+
+// Write to a stream: "Write the verse <expr> into <scribe>"
+class StreamWriteStatement : public ASTNode {
+public:
+    std::string scribeName;               // The scribe to write to
+    std::shared_ptr<ASTNode> expression;  // The content to write
+    
+    StreamWriteStatement(std::string name, std::shared_ptr<ASTNode> expr)
+        : scribeName(std::move(name)), expression(std::move(expr)) {}
+};
+
+// Close a stream: "Close the scribe <name>"
+class StreamCloseStatement : public ASTNode {
+public:
+    std::string scribeName;               // The scribe to close
+    
+    explicit StreamCloseStatement(std::string name)
+        : scribeName(std::move(name)) {}
+};
+
+// Read from stream line by line: "Read from scribe <name> line by line as <var>"
+class StreamReadLoop : public ASTNode {
+public:
+    std::string scribeName;               // The scribe to read from
+    std::string lineVariable;             // Variable to hold each line
+    std::shared_ptr<BlockStatement> body; // Loop body
+    
+    StreamReadLoop(std::string scribe, std::string lineVar, std::shared_ptr<BlockStatement> b)
+        : scribeName(std::move(scribe)), lineVariable(std::move(lineVar)), body(std::move(b)) {}
+};
+
+// Read entire stream: "Read all from scribe <name> into <var>"
+class StreamReadAllStatement : public ASTNode {
+public:
+    std::string scribeName;               // The scribe to read from
+    std::string targetVariable;           // Variable to hold all content
+    
+    StreamReadAllStatement(std::string scribe, std::string target)
+        : scribeName(std::move(scribe)), targetVariable(std::move(target)) {}
+};
+
+// Check if stream is at end: "If the scribe <name> hath ended"
+class StreamEofCheck : public ASTNode {
+public:
+    std::string scribeName;               // The scribe to check
+    
+    explicit StreamEofCheck(std::string name)
+        : scribeName(std::move(name)) {}
+};
     
     
 

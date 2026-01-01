@@ -48,6 +48,13 @@ private:
     std::shared_ptr<ASTNode> parseInscribe(bool append);
     std::shared_ptr<ASTNode> parseBanish();
     
+    // Async / Stream helpers (2.4 Living Chronicles)
+    std::shared_ptr<ASTNode> parseAwaitExpression();
+    std::shared_ptr<ASTNode> parseScribeDeclaration();
+    std::shared_ptr<ASTNode> parseStreamWrite();
+    std::shared_ptr<ASTNode> parseStreamClose();
+    std::shared_ptr<ASTNode> parseStreamReadLoop();
+    
 public:
     Parser(std::vector<Token> tokens);
     Parser(std::vector<Token> tokens, Arena* arena);

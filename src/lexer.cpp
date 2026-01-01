@@ -260,9 +260,16 @@ std::vector<Token> Lexer::tokenize() {
             while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
             currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
         }
+        // 2.4 Stream/scribe declaration: 'Let a scribe <name> be opened upon <path>'
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+a\\s+scribe", std::regex_constants::icase))) {
+            tokens.push_back(Token(TokenType::SCRIBE, "Let a scribe"));
+            currentPos += 12; // "Let a scribe"
+            while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+        }
         // 2.2 Short-form: 'let <identifier>' for typed/untyped variable declarations
-        // Must NOT match "let it" or "let the" (those are handled above)
-        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+(?!it\\s|the\\s)[a-zA-Z_]", std::regex_constants::icase))) {
+        // Must NOT match "let it" or "let the" or "let a scribe" (those are handled above)
+        else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+(?!it\\s|the\\s|a\\s+scribe)[a-zA-Z_]", std::regex_constants::icase))) {
             // Just consume "let" and return LET token; identifier will be lexed separately
             currentPos += 3; // "let"
             while (currentPos < input.length() && std::isspace(input[currentPos])) currentPos++;
@@ -367,6 +374,32 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 6) == "Banish") {
             tokens.push_back(Token(TokenType::BANISH, "Banish"));
             currentPos += 6;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        // Async / Streams (Ardent 2.4)
+        else if (input.substr(currentPos, 18) == "Await the omen of") {
+            tokens.push_back(Token(TokenType::AWAIT, "Await the omen of"));
+            currentPos += 18;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 5) == "Await") {
+            tokens.push_back(Token(TokenType::AWAIT, "Await"));
+            currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 15) == "Write the verse") {
+            tokens.push_back(Token(TokenType::WRITE_INTO, "Write the verse"));
+            currentPos += 15;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 16) == "Close the scribe") {
+            tokens.push_back(Token(TokenType::CLOSE, "Close the scribe"));
+            currentPos += 16;
+            if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 16) == "Read from scribe") {
+            tokens.push_back(Token(TokenType::READ_FROM_STREAM, "Read from scribe"));
+            currentPos += 16;
             if (currentPos < input.length()) currentChar = input[currentPos]; else currentChar = '\0';
         }
         else if (input.substr(currentPos, 19) == "From the scroll of") {

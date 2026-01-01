@@ -16,7 +16,9 @@ enum class TokenType {
     FROM_SCROLL, DRAW_ALL_KNOWLEDGE, TAKE, UNFURL_SCROLL,
     NATIVE_CALL,
     TRY, CATCH, FINALLY, CURSE, OMEN,
-    INSCRIBE, ETCH, READING_FROM, BANISH
+    INSCRIBE, ETCH, READING_FROM, BANISH,
+    // Async / Streams (Ardent 2.4)
+    AWAIT, SCRIBE, OPENED, WRITE_INTO, CLOSE, READ_FROM_STREAM
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -90,6 +92,13 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::ETCH: return "ETCH";
         case TokenType::READING_FROM: return "READING_FROM";
         case TokenType::BANISH: return "BANISH";
+        // Async / Streams (2.4)
+        case TokenType::AWAIT: return "AWAIT";
+        case TokenType::SCRIBE: return "SCRIBE";
+        case TokenType::OPENED: return "OPENED";
+        case TokenType::WRITE_INTO: return "WRITE_INTO";
+        case TokenType::CLOSE: return "CLOSE";
+        case TokenType::READ_FROM_STREAM: return "READ_FROM_STREAM";
         default: return "UNKNOWN";
     }
 }

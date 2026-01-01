@@ -88,6 +88,24 @@ inline std::string disassemble(const Chunk& chunk) {
                 uint8_t argc = code[ip++];
                 out << "NATIVE n" << nid << " " << (int)argc; break;
             }
+            // Async/Concurrency (2.4)
+            case OpCode::OP_AWAIT: out << "AWAIT"; break;
+            case OpCode::OP_RESUME: out << "RESUME"; break;
+            case OpCode::OP_YIELD: out << "YIELD"; break;
+            case OpCode::OP_SPAWN: {
+                uint16_t fid = read_u16(&code[ip]); ip += 2;
+                out << "SPAWN f" << fid; break;
+            }
+            case OpCode::OP_TASK_ID: out << "TASK_ID"; break;
+            // Stream I/O (2.4)
+            case OpCode::OP_STREAM_OPEN: {
+                uint8_t mode = code[ip++];
+                out << "STREAM_OPEN mode=" << (int)mode; break;
+            }
+            case OpCode::OP_STREAM_CLOSE: out << "STREAM_CLOSE"; break;
+            case OpCode::OP_STREAM_READ: out << "STREAM_READ"; break;
+            case OpCode::OP_STREAM_WRITE: out << "STREAM_WRITE"; break;
+            case OpCode::OP_STREAM_EOF: out << "STREAM_EOF"; break;
             default:
                 out << "UNKNOWN(0x" << hex2(static_cast<uint16_t>(code[offset])) << ")"; break;
         }

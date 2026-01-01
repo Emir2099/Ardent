@@ -52,6 +52,20 @@ enum class OpCode : uint8_t {
     OP_PRINT = 0x70,
     OP_DISCARD = 0x71,
 
+    // Async / Concurrency (Ardent 2.4)
+    OP_AWAIT = 0x80,        // Suspend until promise resolves
+    OP_RESUME = 0x81,       // Resume suspended task with value
+    OP_YIELD = 0x82,        // Yield control to scheduler
+    OP_SPAWN = 0x83,        // Spawn a new task: u16 func_id
+    OP_TASK_ID = 0x84,      // Push current task ID
+
+    // Stream I/O (Ardent 2.4)
+    OP_STREAM_OPEN = 0x90,  // u8: mode, open stream from path on stack
+    OP_STREAM_CLOSE = 0x91, // Close stream ID on stack
+    OP_STREAM_READ = 0x92,  // Read line from stream
+    OP_STREAM_WRITE = 0x93, // Write to stream
+    OP_STREAM_EOF = 0x94,   // Push true if stream at EOF
+
     // Program control
     OP_HALT = 0xFF
 };

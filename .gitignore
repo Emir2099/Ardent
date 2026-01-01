@@ -12,6 +12,7 @@ validator.exe
 *.pdb
 *.ilk
 *.log
+test_output.txt
 
 dbg_tokens.exe
 *.Ardent
@@ -69,3 +70,4 @@ RELEASE_NOTES_2.1.md
 
 RELEASE_NOTES_2.2.md
 RELEASE_NOTES_2.3.md
+RELEASE_NOTES_2.4.md

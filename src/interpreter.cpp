@@ -246,6 +246,38 @@ Interpreter::Interpreter() {
     registerNative("time_sleep", [this](const std::vector<Value>& args) -> Value {
         return nativeRegistry["time.sleep"](args);
     });
+    
+    // time.measure: Returns current high-resolution timestamp in milliseconds for measuring durations
+    registerNative("time.measure", [this](const std::vector<Value>& args) -> Value {
+        (void)args; // unused
+        using namespace std::chrono;
+        auto now = high_resolution_clock::now();
+        auto ms = duration_cast<milliseconds>(now.time_since_epoch()).count();
+        // Return as integer (milliseconds since epoch, may wrap but diff is still valid)
+        return static_cast<int>(ms & 0x7FFFFFFF);
+    });
+    registerNative("time_measure", [this](const std::vector<Value>& args) -> Value {
+        return nativeRegistry["time.measure"](args);
+    });
+    
+    // time.sleep_ms: Sleep for a specified number of milliseconds (async-friendly in future)
+    registerNative("time.sleep_ms", [this](const std::vector<Value>& args) -> Value {
+        int ms = 0;
+        if (!args.empty()) {
+            const Value &v = args[0];
+            if (std::holds_alternative<int>(v)) ms = std::get<int>(v);
+            else if (std::holds_alternative<bool>(v)) ms = std::get<bool>(v) ? 1 : 0;
+            else if (std::holds_alternative<std::string>(v)) { try { ms = std::stoi(std::get<std::string>(v)); } catch (...) { ms = 0; } }
+            else if (std::holds_alternative<Phrase>(v)) { const Phrase &p = std::get<Phrase>(v); try { ms = std::stoi(std::string(p.data(), p.size())); } catch (...) { ms = 0; } }
+        }
+        if (ms < 0) ms = 0;
+        std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+        return ms;
+    });
+    registerNative("time_sleep_ms", [this](const std::vector<Value>& args) -> Value {
+        return nativeRegistry["time.sleep_ms"](args);
+    });
+    
     // Chronicle Rites: file I/O with sandboxing
     auto pathAllowed = [](const std::string &path) -> bool {
         if (path.empty()) return false;
@@ -1122,6 +1154,108 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         (void)evaluateValue(native);
     }
     
+    // ========================================================================
+    // ASYNC / STREAMS (2.4 Living Chronicles)
+    // ========================================================================
+    
+    // Handle scribe declaration: "Let a scribe <name> be opened upon <path>"
+    else if (auto scribe = std::dynamic_pointer_cast<ScribeDeclaration>(ast)) {
+        Value pathVal = evaluateValue(scribe->pathExpr);
+        std::string path;
+        if (std::holds_alternative<std::string>(pathVal)) {
+            path = std::get<std::string>(pathVal);
+        } else if (std::holds_alternative<Phrase>(pathVal)) {
+            const Phrase &p = std::get<Phrase>(pathVal);
+            path = std::string(p.data(), p.size());
+        } else {
+            printPoeticCurse("Scribe path must be a phrase or string");
+            return;
+        }
+        
+        // Determine file mode from the scribe mode
+        std::ios_base::openmode mode = std::ios_base::in;
+        if (scribe->mode == "write") {
+            mode = std::ios_base::out | std::ios_base::trunc;
+        } else if (scribe->mode == "append") {
+            mode = std::ios_base::out | std::ios_base::app;
+        } else if (scribe->mode == "readwrite") {
+            mode = std::ios_base::in | std::ios_base::out;
+        }
+        
+        // Store the scribe as a special value in the environment
+        // For now, we use a simple map of scribe name to file stream
+        std::shared_ptr<std::fstream> stream = std::make_shared<std::fstream>(path, mode);
+        if (!stream->is_open()) {
+            printPoeticCurse(std::string("Cannot open scribe upon '") + path + "'");
+            return;
+        }
+        
+        // Store the stream handle in a special scribes map
+        scribes[scribe->scribeName] = stream;
+    }
+    
+    // Handle stream write: "Write the verse <expr> into <scribe>"
+    else if (auto write = std::dynamic_pointer_cast<StreamWriteStatement>(ast)) {
+        auto it = scribes.find(write->scribeName);
+        if (it == scribes.end()) {
+            printPoeticCurse(std::string("No scribe named '") + write->scribeName + "' is open");
+            return;
+        }
+        
+        Value contentVal = evaluateValue(write->expression);
+        std::string content;
+        if (std::holds_alternative<std::string>(contentVal)) {
+            content = std::get<std::string>(contentVal);
+        } else if (std::holds_alternative<Phrase>(contentVal)) {
+            const Phrase &p = std::get<Phrase>(contentVal);
+            content = std::string(p.data(), p.size());
+        } else if (std::holds_alternative<int>(contentVal)) {
+            content = std::to_string(std::get<int>(contentVal));
+        } else if (std::holds_alternative<bool>(contentVal)) {
+            content = std::get<bool>(contentVal) ? "True" : "False";
+        }
+        
+        *(it->second) << content;
+        it->second->flush();
+    }
+    
+    // Handle stream close: "Close the scribe <name>"
+    else if (auto close = std::dynamic_pointer_cast<StreamCloseStatement>(ast)) {
+        auto it = scribes.find(close->scribeName);
+        if (it == scribes.end()) {
+            printPoeticCurse(std::string("No scribe named '") + close->scribeName + "' is open");
+            return;
+        }
+        
+        it->second->close();
+        scribes.erase(it);
+    }
+    
+    // Handle stream read loop: "Read from scribe <name> line by line as <var>"
+    else if (auto readLoop = std::dynamic_pointer_cast<StreamReadLoop>(ast)) {
+        auto it = scribes.find(readLoop->scribeName);
+        if (it == scribes.end()) {
+            printPoeticCurse(std::string("No scribe named '") + readLoop->scribeName + "' is open for reading");
+            return;
+        }
+        
+        enterScope();
+        std::string line;
+        while (std::getline(*(it->second), line)) {
+            // Create a Phrase from the line using the arena
+            Phrase linePhrase = Phrase::make(line.c_str(), line.size(), activeArena());
+            declareVariable(readLoop->lineVariable, linePhrase);
+            execute(readLoop->body);
+        }
+        exitScope();
+    }
+    
+    // Handle await expression as statement
+    else if (auto await = std::dynamic_pointer_cast<AwaitExpression>(ast)) {
+        // For now, just evaluate the inner expression synchronously
+        // Full async will be added when the scheduler is integrated
+        (void)evaluateValue(await->expression);
+    }
 
 
       // Handle print statements.

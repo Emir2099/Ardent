@@ -883,6 +883,21 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         // Fallback wordy Try
         advance();
         return parseTryCatch();
+    } else if (match(TokenType::AWAIT)) {
+        // "Await the omen of <expr>"
+        return parseAwaitExpression();
+    } else if (match(TokenType::SCRIBE)) {
+        // "Let a scribe be opened upon <path>"
+        return parseScribeDeclaration();
+    } else if (match(TokenType::WRITE_INTO)) {
+        // "Write the verse <expr> into <scribe>"
+        return parseStreamWrite();
+    } else if (match(TokenType::CLOSE)) {
+        // "Close the scribe <name>"
+        return parseStreamClose();
+    } else if (match(TokenType::READ_FROM_STREAM)) {
+        // "Read from scribe <name> line by line as <var>"
+        return parseStreamReadLoop();
     } else if (
                peek().type == TokenType::NUMBER ||
                peek().type == TokenType::IDENTIFIER) {
@@ -1262,4 +1277,156 @@ std::shared_ptr<ASTNode> Parser::parseBanish() {
     if (!isAtEnd() && peek().type == TokenType::STRING) advance();
     std::vector<std::shared_ptr<ASTNode>> args; args.push_back(node<Expression>(pathTok));
     return node<NativeInvocation>("chronicles.delete", args);
+}
+
+// ============================================================================
+// ASYNC / STREAM PARSING (2.4 Living Chronicles)
+// ============================================================================
+
+// Parse "Await the omen of <expr>"
+// The AWAIT token was already consumed
+std::shared_ptr<ASTNode> Parser::parseAwaitExpression() {
+    // Skip optional "the omen of" words if they appear as identifiers
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "omen") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "of") advance();
+    
+    auto expr = parseExpression();
+    if (!expr) {
+        std::cerr << "Error: Expected expression after 'Await'" << std::endl;
+        return nullptr;
+    }
+    return node<AwaitExpression>(expr);
+}
+
+// Parse "Let a scribe <name> be opened upon <path> [for reading/writing/appending]"
+// The SCRIBE token was already consumed
+std::shared_ptr<ASTNode> Parser::parseScribeDeclaration() {
+    // Expect scribe name
+    Token nameTok = consume(TokenType::IDENTIFIER, "Expected scribe name after 'Let a scribe'");
+    if (nameTok.type == TokenType::INVALID) return nullptr;
+    
+    // Skip "be opened upon" words
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "be") advance();
+    if (!isAtEnd() && peek().type == TokenType::OPENED) advance();
+    else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "opened") advance();
+    if (!isAtEnd() && peek().type == TokenType::UPON) advance();
+    else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "upon") advance();
+    
+    // Expect path expression
+    auto pathExpr = parseExpression();
+    if (!pathExpr) {
+        std::cerr << "Error: Expected path expression after 'upon'" << std::endl;
+        return nullptr;
+    }
+    
+    // Check for mode: "for reading", "for writing", "for appending"
+    std::string mode = "read";  // default mode
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "for") {
+        advance();
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+            std::string modeWord = peek().value;
+            advance();
+            if (modeWord == "reading") mode = "read";
+            else if (modeWord == "writing") mode = "write";
+            else if (modeWord == "appending") mode = "append";
+            else if (modeWord == "both" || modeWord == "all") mode = "readwrite";
+        }
+    }
+    
+    // Consume trailing period if present
+    if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+    
+    return node<ScribeDeclaration>(nameTok.value, pathExpr, mode);
+}
+
+// Parse "Write the verse <expr> into <scribe>"
+// The WRITE_INTO token was already consumed
+std::shared_ptr<ASTNode> Parser::parseStreamWrite() {
+    // Skip optional "the verse" / "the words"
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && 
+        (peek().value == "verse" || peek().value == "words" || peek().value == "text")) advance();
+    
+    // Parse the content expression
+    auto contentExpr = parseExpression();
+    if (!contentExpr) {
+        std::cerr << "Error: Expected expression after 'Write'" << std::endl;
+        return nullptr;
+    }
+    
+    // Expect "into <scribe>"
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "into") advance();
+    else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "unto") advance();
+    
+    Token scribeTok = consume(TokenType::IDENTIFIER, "Expected scribe name after 'into'");
+    if (scribeTok.type == TokenType::INVALID) return nullptr;
+    
+    // Consume trailing period if present
+    if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+    
+    return node<StreamWriteStatement>(scribeTok.value, contentExpr);
+}
+
+// Parse "Close the scribe <name>"
+// The CLOSE token was already consumed
+std::shared_ptr<ASTNode> Parser::parseStreamClose() {
+    // Skip optional "the scribe"
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scribe") advance();
+    
+    Token scribeTok = consume(TokenType::IDENTIFIER, "Expected scribe name after 'Close'");
+    if (scribeTok.type == TokenType::INVALID) return nullptr;
+    
+    // Consume trailing period if present
+    if (!isAtEnd() && peek().type == TokenType::DOT) advance();
+    
+    return node<StreamCloseStatement>(scribeTok.value);
+}
+
+// Parse "Read from scribe <name> line by line as <var>: <body>"
+// The READ_FROM_STREAM token was already consumed
+std::shared_ptr<ASTNode> Parser::parseStreamReadLoop() {
+    // Skip optional "from scribe"
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "from") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "scribe") advance();
+    
+    Token scribeTok = consume(TokenType::IDENTIFIER, "Expected scribe name after 'Read from scribe'");
+    if (scribeTok.type == TokenType::INVALID) return nullptr;
+    
+    // Skip "line by line"
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "line") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "by") advance();
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "line") advance();
+    
+    // Expect "as <var>"
+    std::string lineVar = "line";  // default variable name
+    if (!isAtEnd() && (peek().type == TokenType::AS || 
+        (peek().type == TokenType::IDENTIFIER && peek().value == "as"))) {
+        advance();
+        Token varTok = consume(TokenType::IDENTIFIER, "Expected variable name after 'as'");
+        if (varTok.type == TokenType::INVALID) return nullptr;
+        lineVar = varTok.value;
+    }
+    
+    // Consume colon if present
+    if (!isAtEnd() && peek().type == TokenType::COLON) advance();
+    
+    // Parse the loop body as a block
+    std::vector<std::shared_ptr<ASTNode>> bodyStmts;
+    while (!isAtEnd()) {
+        // Stop on dedent indicators or explicit end markers
+        if (peek().type == TokenType::END ||
+            (peek().type == TokenType::IDENTIFIER && peek().value == "Done") ||
+            (peek().type == TokenType::IDENTIFIER && peek().value == "End")) {
+            advance();
+            break;
+        }
+        auto stmt = parseStatement();
+        if (stmt) bodyStmts.push_back(stmt);
+        else break;
+    }
+    
+    auto body = node<BlockStatement>(bodyStmts);
+    return node<StreamReadLoop>(scribeTok.value, lineVar, body);
 }
