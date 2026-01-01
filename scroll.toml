@@ -1,0 +1,13 @@
+[scroll]
+name = "Ardent"
+version = "1.0.0"
+description = "A poetic scroll for Ardent"
+author = "Unknown Mage"
+license = "MIT"
+
+[build]
+entry = "Ardent.ardent"
+targets = ["avm"]
+
+[compat]
+ardent = ">=2.3.0"

@@ -28,7 +28,17 @@ add_executable(ardent
   src/types.cpp
   src/type_infer.cpp
   src/type_check.cpp)
-  add_executable(ardent_tests
+
+# Scroll CLI - Package Manager (Ardent 2.3 Scrollsmith)
+add_executable(scroll src/scroll_cli.cpp)
+target_include_directories(scroll PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+if (MSVC)
+  target_compile_options(scroll PRIVATE /W4)
+else()
+  target_compile_options(scroll PRIVATE -Wall -Wextra -pedantic)
+endif()
+
+add_executable(ardent_tests
     tests/phase9_tests.cpp
     src/lexer.cpp
     src/parser.cpp
@@ -198,6 +208,8 @@ endif()
 # Install layout
 # Primary binary: ardent
 install(TARGETS ardent RUNTIME DESTINATION bin)
+# Scroll CLI (package manager)
+install(TARGETS scroll RUNTIME DESTINATION bin)
 
 # Duplicate launcher names (ardentc, oracle) using install(CODE)
 install(CODE [[

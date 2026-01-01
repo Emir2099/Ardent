@@ -521,6 +521,130 @@ This release adds a safe, default-on optimizer pipeline for the classic interpre
 
 ### Release Notes
 
+---
+
+## 🏷️ Ardent 2.2 — Type Runes
+
+> Where types become runes, and the compiler whispers wisdom before the spell is cast.
+
+This release introduces optional static typing while preserving full backward compatibility.
+
+### What's Implemented
+
+- **Type Rune Annotations:** Declare types with `:type` syntax: `let x:whole be 42`
+- **Type Inference:** Automatic type deduction from expressions
+- **Typed Spell Signatures:** Parameter type annotations in spell declarations
+- **Short-Form Variables:** Concise `let x be val` alongside verbose syntax
+- **Type Diagnostics:** `--type-check`, `--dump-types`, `--explain-types` flags
+- **LLVM Fast Paths:** Optimized codegen for typed numeric/boolean operations
+
+### Type Runes
+
+| Rune | Description | Example |
+|------|-------------|---------|
+| `whole` | Integer values | `let x:whole be 42` |
+| `phrase` | String values | `let s:phrase be "Hi"` |
+| `truth` | Boolean values | `let b:truth be True` |
+| `order` | Array/list | `let arr:order be [1,2,3]` |
+| `tome` | Object/dict | `let obj:tome be {"a":1}` |
+| `void` | No return | Spell return type |
+| `any` | Opt-out typing | Accept any type |
+
+### Short-Form Syntax
+
+```ardent
+~~ New concise form
+let x:whole be 42
+let name be "Gandalf"
+
+~~ Verbose form (still works)
+Let it be known throughout the land, a number named x is of 42.
+```
+
+### Typed Spells
+
+```ardent
+By decree of the elders, a spell named double is cast upon a warrior known as n:whole:
+    And let it return n * 2
+```
+
+### Type Check CLI
+
+```bash
+ardent --type-check my_scroll.ardent
+ardent --dump-types my_scroll.ardent
+ardent --explain-types my_scroll.ardent
+```
+
+---
+
+## 📦 Ardent 2.3 — Scrollsmith (Package Manager)
+
+> With Scrollsmith, every spell becomes shareable, every scroll becomes a gift.
+
+Ardent 2.3 introduces `scroll`, a package manager for distributing and installing scrolls.
+
+### Quick Start
+
+```bash
+scroll init              # Create scroll.toml manifest
+scroll install truths    # Install a scroll
+scroll list              # List installed scrolls
+scroll cache             # Show cache info
+```
+
+### scroll.toml Manifest
+
+Every scroll can declare metadata and dependencies:
+
+```toml
+[scroll]
+name = "heroes"
+version = "1.0.0"
+description = "A collection of hero chronicles"
+author = "Elder Mage"
+license = "MIT"
+
+[dependencies]
+truths = "^1.0"
+
+[build]
+entry = "heroes.ardent"
+targets = ["avm"]
+
+[compat]
+ardent = ">=2.3.0"
+```
+
+### Version Constraints
+
+| Constraint | Meaning |
+|------------|---------|
+| `^1.2.3` | Compatible updates: >=1.2.3, <2.0.0 |
+| `~1.2.3` | Patch updates: >=1.2.3, <1.3.0 |
+| `>=1.0, <2.0` | Range constraints |
+| `1.2.3` | Exact version |
+
+### Cache Layout
+
+Scrolls install to `~/.ardent/scrolls/<name>@<version>/`:
+
+```
+~/.ardent/
+├── scrolls/           # Installed packages
+│   └── truths@1.0.0/
+├── registry/          # Cached metadata
+└── keys/              # Signing keys
+```
+
+### Import Resolution
+
+The `inscribe` statement automatically resolves installed packages:
+
+```ardent
+inscribe "truths"         § Resolves from ~/.ardent/scrolls/
+inscribe "heroes@2.0"     § Version-pinned import
+```
 
 ---
 
