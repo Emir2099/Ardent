@@ -656,21 +656,19 @@ Ardent 2.4 introduces buffered file streams with the Scribe system and lays the 
 
 ### Scribe System (Streams)
 
+Open a scribe for writing, write to it, and close it:
+
 ```ardent
-§ Open a scribe for writing
 Let a scribe named logfile be bound to "output.txt"
-
-§ Write to the scribe
 Write the verse "A new tale begins..." into logfile
-
-§ Close the scribe
 Close the scribe logfile
 ```
 
 ### Reading from Streams
 
+Read all lines from a file:
+
 ```ardent
-§ Read all lines from a file
 Read from scribe "input.txt" as line:
     Let it be proclaimed: line
 Done
@@ -678,24 +676,23 @@ Done
 
 ### Time Scroll Enhancements
 
+Import and use the upgraded time scroll for high-resolution timing:
+
 ```ardent
-§ Import the upgraded time scroll
 From the scroll of time, take now, sleep_ms, measure
 
-§ High-resolution timing
 Let it be known, a number named start is of measure
-§ ... perform operations ...
 Let it be known, a number named elapsed is of measure
 Let it be proclaimed: "Elapsed: " + (elapsed - start) + "ms"
 
-§ Millisecond sleep
-Invoke the spell sleep_ms upon 100  § Sleep for 100ms
+Invoke the spell sleep_ms upon 100
 ```
 
 ### Async Foundation (Await Rites)
 
+The await syntax is ready for future async support:
+
 ```ardent
-§ Await syntax (currently synchronous, async in future)
 Await the omen of some_spell
 ```
 
