@@ -18,7 +18,9 @@ enum class TokenType {
     TRY, CATCH, FINALLY, CURSE, OMEN,
     INSCRIBE, ETCH, READING_FROM, BANISH,
     // Async / Streams (Ardent 2.4)
-    AWAIT, SCRIBE, OPENED, WRITE_INTO, CLOSE, READ_FROM_STREAM
+    AWAIT, SCRIBE, OPENED, WRITE_INTO, CLOSE, READ_FROM_STREAM,
+    // Collection iteration & operations (Ardent 3.1)
+    EACH, ABIDETH, IN, WHERE, TRANSFORMED, BE
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -99,6 +101,13 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::WRITE_INTO: return "WRITE_INTO";
         case TokenType::CLOSE: return "CLOSE";
         case TokenType::READ_FROM_STREAM: return "READ_FROM_STREAM";
+        // Collection iteration & operations (3.1)
+        case TokenType::EACH: return "EACH";
+        case TokenType::ABIDETH: return "ABIDETH";
+        case TokenType::IN: return "IN";
+        case TokenType::WHERE: return "WHERE";
+        case TokenType::TRANSFORMED: return "TRANSFORMED";
+        case TokenType::BE: return "BE";
         default: return "UNKNOWN";
     }
 }

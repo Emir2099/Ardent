@@ -351,6 +351,82 @@ Interpreter::Interpreter() {
         if (!ok && ec) throw ArdentError("The scroll cannot be banished: '" + path + "'.");
         return ok ? 1 : 0;
     });
+    
+    // ============================================================================
+    // 3.1: Collection utilities for iteration and membership
+    // ============================================================================
+    
+    // order.keys(tome) - get keys of a tome as an Order
+    registerNative("order.keys", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 1) throw ArdentError("The spirits demand 1 offering for 'order.keys'.");
+        const Value &v = args[0];
+        std::vector<SimpleValue> keys;
+        if (std::holds_alternative<Tome>(v)) {
+            const Tome& tm = std::get<Tome>(v);
+            for (size_t i = 0; i < tm.size; ++i) {
+                keys.push_back(tm.data[i].key);
+            }
+        } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(v)) {
+            const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(v);
+            for (const auto& kv : mp) {
+                keys.push_back(kv.first);
+            }
+        } else {
+            throw ArdentError("order.keys requires a tome.");
+        }
+        return keys;
+    });
+    
+    // has_key(tome, key) - check if tome has a key
+    registerNative("has_key", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'has_key'.");
+        const Value &tomeVal = args[0];
+        std::string keyStr;
+        if (std::holds_alternative<std::string>(args[1])) keyStr = std::get<std::string>(args[1]);
+        else if (std::holds_alternative<Phrase>(args[1])) { const Phrase &p = std::get<Phrase>(args[1]); keyStr.assign(p.data(), p.size()); }
+        else throw ArdentError("has_key requires a phrase as key.");
+        
+        if (std::holds_alternative<Tome>(tomeVal)) {
+            const Tome& tm = std::get<Tome>(tomeVal);
+            for (size_t i = 0; i < tm.size; ++i) {
+                if (tm.data[i].key == keyStr) return true;
+            }
+            return false;
+        } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(tomeVal)) {
+            const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(tomeVal);
+            return mp.find(keyStr) != mp.end();
+        }
+        throw ArdentError("has_key requires a tome.");
+    });
+    
+    // order.new() - create empty Order
+    registerNative("order.new", [this](const std::vector<Value>& args) -> Value {
+        (void)args;
+        return std::vector<SimpleValue>{};
+    });
+    
+    // order.append(order, value) - returns new Order with appended value
+    registerNative("order.append", [this](const std::vector<Value>& args) -> Value {
+        if (args.size() != 2) throw ArdentError("The spirits demand 2 offerings for 'order.append'.");
+        std::vector<SimpleValue> result;
+        const Value &v = args[0];
+        if (std::holds_alternative<Order>(v)) {
+            const Order& ord = std::get<Order>(v);
+            for (size_t i = 0; i < ord.size; ++i) result.push_back(ord.data[i]);
+        } else if (std::holds_alternative<std::vector<SimpleValue>>(v)) {
+            result = std::get<std::vector<SimpleValue>>(v);
+        } else {
+            throw ArdentError("order.append requires an order as first argument.");
+        }
+        // Convert Value to SimpleValue
+        const Value &elem = args[1];
+        if (std::holds_alternative<int>(elem)) result.push_back(std::get<int>(elem));
+        else if (std::holds_alternative<std::string>(elem)) result.push_back(std::get<std::string>(elem));
+        else if (std::holds_alternative<bool>(elem)) result.push_back(std::get<bool>(elem));
+        else if (std::holds_alternative<Phrase>(elem)) { const Phrase &p = std::get<Phrase>(elem); result.push_back(std::string(p.data(), p.size())); }
+        else throw ArdentError("order.append: element must be a number, phrase, or truth.");
+        return result;
+    });
 }
 
 void Interpreter::enterScope() {
@@ -737,6 +813,156 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         // Fallback numeric
         int n = evaluateExpr(expr);
         return n;
+    }
+    // ContainsExpr: "needle abideth in haystack" -> bool
+    if (auto cont = std::dynamic_pointer_cast<ContainsExpr>(expr)) {
+        Value needle = evaluateValue(cont->needle);
+        Value haystack = evaluateValue(cont->haystack);
+        // Check if needle is in haystack (Order or Tome)
+        if (std::holds_alternative<Order>(haystack)) {
+            const auto &ord = std::get<Order>(haystack);
+            for (size_t i = 0; i < ord.size; ++i) {
+                const SimpleValue &sv = ord.data[i];
+                bool match = false;
+                if (std::holds_alternative<int>(needle) && std::holds_alternative<int>(sv)) {
+                    match = (std::get<int>(needle) == std::get<int>(sv));
+                } else if (std::holds_alternative<bool>(needle) && std::holds_alternative<bool>(sv)) {
+                    match = (std::get<bool>(needle) == std::get<bool>(sv));
+                } else if ((std::holds_alternative<std::string>(needle) || std::holds_alternative<Phrase>(needle)) &&
+                           std::holds_alternative<std::string>(sv)) {
+                    std::string ns;
+                    if (std::holds_alternative<std::string>(needle)) ns = std::get<std::string>(needle);
+                    else { const Phrase &p = std::get<Phrase>(needle); ns.assign(p.data(), p.size()); }
+                    match = (ns == std::get<std::string>(sv));
+                }
+                if (match) return true;
+            }
+            return false;
+        }
+        if (std::holds_alternative<std::vector<SimpleValue>>(haystack)) {
+            const auto &vec = std::get<std::vector<SimpleValue>>(haystack);
+            for (const auto &sv : vec) {
+                bool match = false;
+                if (std::holds_alternative<int>(needle) && std::holds_alternative<int>(sv)) {
+                    match = (std::get<int>(needle) == std::get<int>(sv));
+                } else if (std::holds_alternative<bool>(needle) && std::holds_alternative<bool>(sv)) {
+                    match = (std::get<bool>(needle) == std::get<bool>(sv));
+                } else if ((std::holds_alternative<std::string>(needle) || std::holds_alternative<Phrase>(needle)) &&
+                           std::holds_alternative<std::string>(sv)) {
+                    std::string ns;
+                    if (std::holds_alternative<std::string>(needle)) ns = std::get<std::string>(needle);
+                    else { const Phrase &p = std::get<Phrase>(needle); ns.assign(p.data(), p.size()); }
+                    match = (ns == std::get<std::string>(sv));
+                }
+                if (match) return true;
+            }
+            return false;
+        }
+        // For Tome, check if needle is a key
+        if (std::holds_alternative<Tome>(haystack)) {
+            std::string k;
+            if (std::holds_alternative<std::string>(needle)) k = std::get<std::string>(needle);
+            else if (std::holds_alternative<Phrase>(needle)) { const Phrase &p = std::get<Phrase>(needle); k.assign(p.data(), p.size()); }
+            else { std::cerr << "TypeError: Tome membership test requires a phrase key" << std::endl; return false; }
+            const auto &tm = std::get<Tome>(haystack);
+            for (size_t i = 0; i < tm.size; ++i) {
+                if (tm.data[i].key == k) return true;
+            }
+            return false;
+        }
+        if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(haystack)) {
+            std::string k;
+            if (std::holds_alternative<std::string>(needle)) k = std::get<std::string>(needle);
+            else if (std::holds_alternative<Phrase>(needle)) { const Phrase &p = std::get<Phrase>(needle); k.assign(p.data(), p.size()); }
+            else { std::cerr << "TypeError: Tome membership test requires a phrase key" << std::endl; return false; }
+            const auto &mp = std::get<std::unordered_map<std::string, SimpleValue>>(haystack);
+            return mp.find(k) != mp.end();
+        }
+        std::cerr << "TypeError: 'abideth in' requires an order or tome on the right" << std::endl;
+        return false;
+    }
+    // WhereExpr: "source where predicate" -> new Order
+    if (auto wh = std::dynamic_pointer_cast<WhereExpr>(expr)) {
+        Value source = evaluateValue(wh->source);
+        if (!std::holds_alternative<Order>(source) && !std::holds_alternative<std::vector<SimpleValue>>(source)) {
+            std::cerr << "TypeError: 'where' requires an order" << std::endl;
+            return Order{0, nullptr};
+        }
+        std::vector<SimpleValue> result;
+        auto filterItem = [&](const SimpleValue &sv) {
+            enterScope();
+            Value itVal;
+            if (std::holds_alternative<int>(sv)) itVal = std::get<int>(sv);
+            else if (std::holds_alternative<std::string>(sv)) itVal = std::get<std::string>(sv);
+            else if (std::holds_alternative<bool>(sv)) itVal = std::get<bool>(sv);
+            declareVariable(wh->iterVar, itVal);
+            Value predResult = evaluateValue(wh->predicate);
+            exitScope();
+            bool keep = false;
+            if (std::holds_alternative<bool>(predResult)) keep = std::get<bool>(predResult);
+            else if (std::holds_alternative<int>(predResult)) keep = std::get<int>(predResult) != 0;
+            return keep;
+        };
+        if (std::holds_alternative<Order>(source)) {
+            const auto &ord = std::get<Order>(source);
+            for (size_t i = 0; i < ord.size; ++i) {
+                if (filterItem(ord.data[i])) result.push_back(ord.data[i]);
+            }
+        } else {
+            const auto &vec = std::get<std::vector<SimpleValue>>(source);
+            for (const auto &sv : vec) {
+                if (filterItem(sv)) result.push_back(sv);
+            }
+        }
+        // Build arena-backed Order
+        size_t n = result.size();
+        void* mem = activeArena().alloc(sizeof(SimpleValue) * n, alignof(SimpleValue));
+        auto* buf = reinterpret_cast<SimpleValue*>(mem);
+        for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(result[i]);
+        return Order{n, buf};
+    }
+    // TransformExpr: "source transformed as expr" -> new Order
+    if (auto tr = std::dynamic_pointer_cast<TransformExpr>(expr)) {
+        Value source = evaluateValue(tr->source);
+        if (!std::holds_alternative<Order>(source) && !std::holds_alternative<std::vector<SimpleValue>>(source)) {
+            std::cerr << "TypeError: 'transformed as' requires an order" << std::endl;
+            return Order{0, nullptr};
+        }
+        std::vector<SimpleValue> result;
+        auto transformItem = [&](const SimpleValue &sv) -> SimpleValue {
+            enterScope();
+            Value itVal;
+            if (std::holds_alternative<int>(sv)) itVal = std::get<int>(sv);
+            else if (std::holds_alternative<std::string>(sv)) itVal = std::get<std::string>(sv);
+            else if (std::holds_alternative<bool>(sv)) itVal = std::get<bool>(sv);
+            declareVariable(tr->iterVar, itVal);
+            Value transResult = evaluateValue(tr->transform);
+            exitScope();
+            SimpleValue out;
+            if (std::holds_alternative<int>(transResult)) out = std::get<int>(transResult);
+            else if (std::holds_alternative<std::string>(transResult)) out = std::get<std::string>(transResult);
+            else if (std::holds_alternative<Phrase>(transResult)) { const Phrase &p = std::get<Phrase>(transResult); out = std::string(p.data(), p.size()); }
+            else if (std::holds_alternative<bool>(transResult)) out = std::get<bool>(transResult);
+            else out = 0;
+            return out;
+        };
+        if (std::holds_alternative<Order>(source)) {
+            const auto &ord = std::get<Order>(source);
+            for (size_t i = 0; i < ord.size; ++i) {
+                result.push_back(transformItem(ord.data[i]));
+            }
+        } else {
+            const auto &vec = std::get<std::vector<SimpleValue>>(source);
+            for (const auto &sv : vec) {
+                result.push_back(transformItem(sv));
+            }
+        }
+        // Build arena-backed Order
+        size_t n = result.size();
+        void* mem = activeArena().alloc(sizeof(SimpleValue) * n, alignof(SimpleValue));
+        auto* buf = reinterpret_cast<SimpleValue*>(mem);
+        for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(result[i]);
+        return Order{n, buf};
     }
     // Unknown node type
     return 0;
@@ -1255,6 +1481,146 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
         // For now, just evaluate the inner expression synchronously
         // Full async will be added when the scheduler is integrated
         (void)evaluateValue(await->expression);
+    }
+
+    // ============================================================================
+    // 3.1: Collection iteration & operations
+    // ============================================================================
+    
+    // Handle for-each loop: "For each X in Y:"
+    else if (auto forEach = std::dynamic_pointer_cast<ForEachStmt>(ast)) {
+        Value collVal = evaluateValue(forEach->collection);
+        enterScope();
+        
+        if (forEach->hasTwoVars) {
+            // Key, value iteration over Tome
+            if (std::holds_alternative<Tome>(collVal)) {
+                const Tome& tm = std::get<Tome>(collVal);
+                for (size_t i = 0; i < tm.size; ++i) {
+                    declareVariable(forEach->iterVar, Value(tm.data[i].key));
+                    // Convert SimpleValue to Value
+                    const SimpleValue& sv = tm.data[i].value;
+                    Value val;
+                    if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
+                    else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
+                    else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
+                    declareVariable(forEach->valueVar, val);
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(collVal)) {
+                const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(collVal);
+                for (const auto& kv : mp) {
+                    declareVariable(forEach->iterVar, Value(kv.first));
+                    Value val;
+                    const SimpleValue& sv = kv.second;
+                    if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
+                    else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
+                    else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
+                    declareVariable(forEach->valueVar, val);
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else {
+                printPoeticCurse("For each with two variables requires a tome.");
+            }
+        } else {
+            // Single variable iteration over Order or Tome keys
+            if (std::holds_alternative<Order>(collVal)) {
+                const Order& ord = std::get<Order>(collVal);
+                for (size_t i = 0; i < ord.size; ++i) {
+                    const SimpleValue& sv = ord.data[i];
+                    Value val;
+                    if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
+                    else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
+                    else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
+                    declareVariable(forEach->iterVar, val);
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else if (std::holds_alternative<std::vector<SimpleValue>>(collVal)) {
+                const auto& vec = std::get<std::vector<SimpleValue>>(collVal);
+                for (const SimpleValue& sv : vec) {
+                    Value val;
+                    if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
+                    else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
+                    else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
+                    declareVariable(forEach->iterVar, val);
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else if (std::holds_alternative<Tome>(collVal)) {
+                // Keys only
+                const Tome& tm = std::get<Tome>(collVal);
+                for (size_t i = 0; i < tm.size; ++i) {
+                    declareVariable(forEach->iterVar, Value(tm.data[i].key));
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(collVal)) {
+                const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(collVal);
+                for (const auto& kv : mp) {
+                    declareVariable(forEach->iterVar, Value(kv.first));
+                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                }
+            } else {
+                printPoeticCurse("For each requires an order or tome.");
+            }
+        }
+        exitScope();
+    }
+    
+    // Handle index assignment: "X[i] be Y"
+    else if (auto idxAssign = std::dynamic_pointer_cast<IndexAssignStmt>(ast)) {
+        // Get target variable name from target expression
+        std::string varName;
+        if (auto expr = std::dynamic_pointer_cast<Expression>(idxAssign->target)) {
+            varName = expr->token.value;
+        } else {
+            printPoeticCurse("Index assignment target must be a variable.");
+            return;
+        }
+        
+        int scopeIdx = findScopeIndex(varName);
+        if (scopeIdx < 0) {
+            printPoeticCurse(std::string("Undefined variable '") + varName + "'");
+            return;
+        }
+        
+        Value current = scopes[static_cast<size_t>(scopeIdx)][varName];
+        Value indexVal = evaluateValue(idxAssign->index);
+        Value newVal = evaluateValue(idxAssign->value);
+        
+        // Convert newVal to SimpleValue
+        SimpleValue sv;
+        if (std::holds_alternative<int>(newVal)) sv = std::get<int>(newVal);
+        else if (std::holds_alternative<std::string>(newVal)) sv = std::get<std::string>(newVal);
+        else if (std::holds_alternative<Phrase>(newVal)) { const Phrase &p = std::get<Phrase>(newVal); sv = std::string(p.data(), p.size()); }
+        else if (std::holds_alternative<bool>(newVal)) sv = std::get<bool>(newVal);
+        else { printPoeticCurse("Index assignment value must be a number, phrase, or truth."); return; }
+        
+        if (std::holds_alternative<Order>(current)) {
+            if (!std::holds_alternative<int>(indexVal)) { printPoeticCurse("Order index must be a number."); return; }
+            int idx = std::get<int>(indexVal);
+            const Order& old = std::get<Order>(current);
+            int sz = static_cast<int>(old.size);
+            if (idx < 0) idx = sz + idx;
+            if (idx < 0 || idx >= sz) { printPoeticCurse("Index out of bounds."); return; }
+            // Create new Order with updated value
+            void* mem = activeArena().alloc(sizeof(SimpleValue) * old.size, alignof(SimpleValue));
+            auto* buf = reinterpret_cast<SimpleValue*>(mem);
+            for (size_t i = 0; i < old.size; ++i) {
+                if (static_cast<int>(i) == idx) new (&buf[i]) SimpleValue(sv);
+                else new (&buf[i]) SimpleValue(old.data[i]);
+            }
+            assignVariableAny(varName, Order{ old.size, buf });
+        } else if (std::holds_alternative<std::vector<SimpleValue>>(current)) {
+            if (!std::holds_alternative<int>(indexVal)) { printPoeticCurse("Order index must be a number."); return; }
+            int idx = std::get<int>(indexVal);
+            auto vec = std::get<std::vector<SimpleValue>>(current);
+            int sz = static_cast<int>(vec.size());
+            if (idx < 0) idx = sz + idx;
+            if (idx < 0 || idx >= sz) { printPoeticCurse("Index out of bounds."); return; }
+            vec[static_cast<size_t>(idx)] = sv;
+            assignVariableAny(varName, vec);
+        } else {
+            printPoeticCurse("Index assignment only works on orders.");
+        }
     }
 
 

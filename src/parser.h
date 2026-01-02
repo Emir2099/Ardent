@@ -55,6 +55,13 @@ private:
     std::shared_ptr<ASTNode> parseStreamClose();
     std::shared_ptr<ASTNode> parseStreamReadLoop();
     
+    // Collection iteration & operations (3.1 The Weaving of Orders)
+    std::shared_ptr<ASTNode> parseForEach();
+    std::shared_ptr<ASTNode> parseContainsExpr(std::shared_ptr<ASTNode> left);
+    std::shared_ptr<ASTNode> parseWhereExpr(std::shared_ptr<ASTNode> source);
+    std::shared_ptr<ASTNode> parseTransformExpr(std::shared_ptr<ASTNode> source);
+    std::shared_ptr<ASTNode> parseIndexAssign(std::shared_ptr<ASTNode> target, std::shared_ptr<ASTNode> index);
+    
 public:
     Parser(std::vector<Token> tokens);
     Parser(std::vector<Token> tokens, Arena* arena);

@@ -96,7 +96,7 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
     return parsePrimary();
 }
 
-// Parse comparison expressions: handles SURPASSETH, REMAINETH, EQUAL, NOT_EQUAL, GREATER, LESSER
+// Parse comparison expressions: handles SURPASSETH, REMAINETH, EQUAL, NOT_EQUAL, GREATER, LESSER, ABIDETH IN
 std::shared_ptr<ASTNode> Parser::parseComparison() {
     auto left = parseUnary();
     while (!isAtEnd()) {
@@ -107,6 +107,11 @@ std::shared_ptr<ASTNode> Parser::parseComparison() {
             Token op = advance();
             auto right = parseUnary();
             left = node<BinaryExpression>(left, op, right);
+        } else if (t == TokenType::ABIDETH || 
+                   (t == TokenType::IDENTIFIER && peek().value == "abideth")) {
+            // 3.1: "X abideth in Y" membership test
+            advance(); // consume 'abideth'
+            return parseContainsExpr(left);
         } else if (t == TokenType::IDENTIFIER && peek().value == "is") {
             // Attempt to parse literary comparisons from identifier sequence
             size_t save = current;
@@ -215,7 +220,12 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
         return nullptr;
     }
     // Postfix indexing: target[expr] ... and dot syntax: target.identifier
-    while (!isAtEnd() && (peek().type == TokenType::LBRACKET || peek().type == TokenType::DOT)) {
+    // Also handles 3.1: where, transformed as, and index assignment (X[i] be Y)
+    while (!isAtEnd() && (peek().type == TokenType::LBRACKET || peek().type == TokenType::DOT ||
+                          peek().type == TokenType::WHERE || 
+                          (peek().type == TokenType::IDENTIFIER && peek().value == "where") ||
+                          peek().type == TokenType::TRANSFORMED ||
+                          (peek().type == TokenType::IDENTIFIER && peek().value == "transformed"))) {
         if (peek().type == TokenType::LBRACKET) {
             advance(); // consume [
             auto indexExpr = parseExpression();
@@ -223,7 +233,14 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
                 std::cerr << "Error: Expected ']' in index expression at position " << current << std::endl;
                 return nullptr;
             }
-            cur = node<IndexExpression>(cur, indexExpr);
+            auto indexNode = node<IndexExpression>(cur, indexExpr);
+            // 3.1: Check for "be" for index assignment
+            if (!isAtEnd() && (peek().type == TokenType::BE || 
+                (peek().type == TokenType::IDENTIFIER && peek().value == "be"))) {
+                advance(); // consume 'be'
+                return parseIndexAssign(cur, indexExpr);
+            }
+            cur = indexNode;
         } else if (peek().type == TokenType::DOT) {
             advance(); // consume '.'
             Token keyTok = consume(TokenType::IDENTIFIER, "Expected identifier after '.' for tome field");
@@ -231,6 +248,16 @@ std::shared_ptr<ASTNode> Parser::parsePrimary() {
             // Build a STRING literal expression for the key
             auto keyExpr = node<Expression>(Token(TokenType::STRING, keyTok.value));
             cur = node<IndexExpression>(cur, keyExpr);
+        } else if (peek().type == TokenType::WHERE || 
+                   (peek().type == TokenType::IDENTIFIER && peek().value == "where")) {
+            // 3.1: "X where <predicate>"
+            advance(); // consume 'where'
+            return parseWhereExpr(cur);
+        } else if (peek().type == TokenType::TRANSFORMED ||
+                   (peek().type == TokenType::IDENTIFIER && peek().value == "transformed")) {
+            // 3.1: "X transformed as <expr>"
+            advance(); // consume 'transformed'
+            return parseTransformExpr(cur);
         }
     }
     return cur;
@@ -814,6 +841,12 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (match(TokenType::WHILST)) {
         return parseWhileLoop();
     } else if (match(TokenType::FOR)) {
+        // Check if this is "For each" (for-each loop) or classic "For X surpasseth" (for loop)
+        if (!isAtEnd() && (peek().type == TokenType::EACH || 
+            (peek().type == TokenType::IDENTIFIER && peek().value == "each"))) {
+            advance(); // consume "each"
+            return parseForEach();
+        }
         return parseForLoop();
     } else if (match(TokenType::DO_FATES)) {
         return parseDoWhileLoop();
@@ -924,6 +957,10 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
         }
         // Otherwise, parse a bare expression, but guard against illegal assignment into collections
         auto expr = parseExpression();
+        // If expression is actually an IndexAssignStmt, return it as a statement directly
+        if (std::dynamic_pointer_cast<IndexAssignStmt>(expr)) {
+            return expr;
+        }
         if (!isAtEnd() && peek().type == TokenType::IS_OF) {
             // Attempt to assign outside declaration; if LHS is an index expression, enforce immutability rule
             if (std::dynamic_pointer_cast<IndexExpression>(expr)) {
@@ -1429,4 +1466,143 @@ std::shared_ptr<ASTNode> Parser::parseStreamReadLoop() {
     
     auto body = node<BlockStatement>(bodyStmts);
     return node<StreamReadLoop>(scribeTok.value, lineVar, body);
+}
+// ============================================================================
+// COLLECTION ITERATION & OPERATIONS (3.1 The Weaving of Orders)
+// ============================================================================
+
+// Parse "For each X in Y:" or "For each K, V in Y:"
+std::shared_ptr<ASTNode> Parser::parseForEach() {
+    // "each" token already consumed by caller
+    
+    // Parse first iterator variable
+    Token iterTok = consume(TokenType::IDENTIFIER, "Expected iterator variable after 'For each'");
+    if (iterTok.type == TokenType::INVALID) return nullptr;
+    std::string iterVar = iterTok.value;
+    std::string valueVar;
+    bool hasTwoVars = false;
+    
+    // Check for optional second variable (key, value pattern)
+    if (!isAtEnd() && peek().type == TokenType::COMMA) {
+        advance(); // consume comma
+        Token valueTok = consume(TokenType::IDENTIFIER, "Expected second variable after ','");
+        if (valueTok.type == TokenType::INVALID) return nullptr;
+        valueVar = valueTok.value;
+        hasTwoVars = true;
+    }
+    
+    // Expect "in"
+    if (!isAtEnd() && peek().type == TokenType::IN) {
+        advance();
+    } else if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "in") {
+        advance();
+    } else {
+        std::cerr << "Error: Expected 'in' after iterator variable in for-each loop" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the collection expression
+    auto collection = parsePrimary();
+    if (!collection) {
+        std::cerr << "Error: Expected collection after 'in' in for-each loop" << std::endl;
+        return nullptr;
+    }
+    
+    // Consume optional colon
+    if (!isAtEnd() && peek().type == TokenType::COLON) advance();
+    
+    // Parse the loop body
+    std::vector<std::shared_ptr<ASTNode>> bodyStmts;
+    while (!isAtEnd()) {
+        // Stop on dedent indicators or new top-level statements
+        if (peek().type == TokenType::END ||
+            (peek().type == TokenType::IDENTIFIER && (peek().value == "Done" || peek().value == "End"))) {
+            advance();
+            break;
+        }
+        // Stop if we hit another major statement keyword that's clearly not body
+        if (peek().type == TokenType::FOR || peek().type == TokenType::WHILST ||
+            peek().type == TokenType::DECREE_ELDERS || peek().type == TokenType::FROM_SCROLL) {
+            break;
+        }
+        auto stmt = parseStatement();
+        if (stmt) bodyStmts.push_back(stmt);
+        else break;
+    }
+    
+    auto body = node<BlockStatement>(bodyStmts);
+    return node<ForEachStmt>(iterVar, valueVar, collection, body, hasTwoVars);
+}
+
+// Parse "X abideth in Y" - called from parseComparison when we see ABIDETH
+std::shared_ptr<ASTNode> Parser::parseContainsExpr(std::shared_ptr<ASTNode> left) {
+    // ABIDETH already consumed; expect "in"
+    if (!isAtEnd() && (peek().type == TokenType::IN || 
+        (peek().type == TokenType::IDENTIFIER && peek().value == "in"))) {
+        advance();
+    } else {
+        std::cerr << "Error: Expected 'in' after 'abideth'" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the collection (haystack)
+    auto haystack = parsePrimary();
+    if (!haystack) {
+        std::cerr << "Error: Expected collection after 'abideth in'" << std::endl;
+        return nullptr;
+    }
+    
+    return node<ContainsExpr>(left, haystack);
+}
+
+// Parse "X where <predicate>" - called after primary/postfix parsing
+std::shared_ptr<ASTNode> Parser::parseWhereExpr(std::shared_ptr<ASTNode> source) {
+    // WHERE already consumed
+    
+    // The predicate references elements implicitly; we use "it" as the implicit variable
+    // or allow explicit form: "where x.field == value"
+    auto predicate = parseComparison();
+    if (!predicate) {
+        std::cerr << "Error: Expected predicate after 'where'" << std::endl;
+        return nullptr;
+    }
+    
+    // Use "it" as the implicit iterator variable name
+    return node<WhereExpr>(source, "it", predicate);
+}
+
+// Parse "X transformed as <expr>" - called after primary/postfix parsing
+std::shared_ptr<ASTNode> Parser::parseTransformExpr(std::shared_ptr<ASTNode> source) {
+    // TRANSFORMED already consumed; expect "as"
+    if (!isAtEnd() && (peek().type == TokenType::AS || 
+        (peek().type == TokenType::IDENTIFIER && peek().value == "as"))) {
+        advance();
+    } else {
+        std::cerr << "Error: Expected 'as' after 'transformed'" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the transformation expression
+    auto transform = parseExpression();
+    if (!transform) {
+        std::cerr << "Error: Expected expression after 'transformed as'" << std::endl;
+        return nullptr;
+    }
+    
+    // Use "it" as the implicit iterator variable name
+    return node<TransformExpr>(source, "it", transform);
+}
+
+// Parse "X[i] be Y" - index assignment
+std::shared_ptr<ASTNode> Parser::parseIndexAssign(std::shared_ptr<ASTNode> target, std::shared_ptr<ASTNode> index) {
+    // BE already consumed
+    
+    // Parse the value to assign
+    auto value = parseExpression();
+    if (!value) {
+        std::cerr << "Error: Expected value after 'be' in index assignment" << std::endl;
+        return nullptr;
+    }
+    
+    return node<IndexAssignStmt>(target, index, value);
 }

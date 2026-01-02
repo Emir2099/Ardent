@@ -192,6 +192,13 @@ Token Lexer::parseIdentifier() {
     if (identifier == "amend") return Token(TokenType::AMEND, identifier);
     if (identifier == "remove") return Token(TokenType::REMOVE, identifier);
     if (identifier == "erase") return Token(TokenType::ERASE, identifier);
+    // 3.1 Collection iteration & operations
+    if (identifier == "each") return Token(TokenType::EACH, identifier);
+    if (identifier == "abideth") return Token(TokenType::ABIDETH, identifier);
+    if (identifier == "in") return Token(TokenType::IN, identifier);
+    if (identifier == "where") return Token(TokenType::WHERE, identifier);
+    if (identifier == "transformed") return Token(TokenType::TRANSFORMED, identifier);
+    if (identifier == "be") return Token(TokenType::BE, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);
@@ -562,6 +569,14 @@ else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))
                  currentChar == '%' || currentChar == '=') {
             std::string op(1, currentChar);
             tokens.push_back(Token(TokenType::OPERATOR, op));
+            advance();
+        }
+        else if (currentChar == '>') {
+            tokens.push_back(Token(TokenType::GREATER, ">"));
+            advance();
+        }
+        else if (currentChar == '<') {
+            tokens.push_back(Token(TokenType::LESSER, "<"));
             advance();
         }
         else if (isAlpha(currentChar)) {

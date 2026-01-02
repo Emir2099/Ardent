@@ -739,6 +739,39 @@ Let it be known, a phrase named name :phrase is of "Aragorn".
 
 ---
 
+## 🌿 Ardent 3.1 — The Weaving of Orders
+
+> The threads of data weave together, forming patterns of meaning.
+
+Ardent 3.1 brings **expressive collection iteration and transformation** to the language.
+
+### What's New
+
+| Feature | Description |
+|---------|-------------|
+| **For-Each Loops** | `For each hero in heroes:` iteration over Orders and Tomes |
+| **Key-Value Iteration** | `For each key, val in tome:` for Tome traversal |
+| **Membership Test** | `"Lancelot" abideth in heroes` returns True/False |
+| **Filtering** | `numbers where it > 5` creates filtered Order |
+| **Transformation** | `numbers transformed as it * 2` maps to new Order |
+| **Index Assignment** | `heroes[1] be "Percival"` mutates Order elements |
+
+### Quick Examples
+
+```ardent
+Let it be known, an order named heroes is of ["Arthur", "Lancelot", "Galahad"].
+
+For each hero in heroes:
+    Let it be proclaimed: hero
+Done
+
+Let it be proclaimed: "Lancelot" abideth in heroes
+
+Let it be known, an order named doubled is of [1, 2, 3] transformed as it * 2.
+```
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

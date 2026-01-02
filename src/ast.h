@@ -376,6 +376,68 @@ public:
     explicit StreamEofCheck(std::string name)
         : scribeName(std::move(name)) {}
 };
+
+// ============================================================================
+// COLLECTION ITERATION & OPERATIONS (3.1 The Weaving of Orders)
+// ============================================================================
+
+// For-each loop: "For each X in Y:" or "For each K, V in Y:"
+class ForEachStmt : public ASTNode {
+public:
+    std::string iterVar;                   // Main iterator variable (element or key)
+    std::string valueVar;                  // Optional value variable (for tome key,value)
+    std::shared_ptr<ASTNode> collection;   // The Order or Tome to iterate
+    std::shared_ptr<BlockStatement> body;  // Loop body
+    bool hasTwoVars = false;               // True if "key, value in tome"
+    
+    ForEachStmt(std::string iter, std::string val, std::shared_ptr<ASTNode> coll,
+                std::shared_ptr<BlockStatement> b, bool twoVars = false)
+        : iterVar(std::move(iter)), valueVar(std::move(val)), 
+          collection(std::move(coll)), body(std::move(b)), hasTwoVars(twoVars) {}
+};
+
+// Membership test: "X abideth in Y"
+class ContainsExpr : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> needle;       // The value to search for
+    std::shared_ptr<ASTNode> haystack;     // The Order or Tome to search in
+    
+    ContainsExpr(std::shared_ptr<ASTNode> n, std::shared_ptr<ASTNode> h)
+        : needle(std::move(n)), haystack(std::move(h)) {}
+};
+
+// Filtering: "X where <predicate>"
+class WhereExpr : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> source;       // The Order to filter
+    std::string iterVar;                   // Iterator variable name for predicate
+    std::shared_ptr<ASTNode> predicate;    // Boolean expression
+    
+    WhereExpr(std::shared_ptr<ASTNode> src, std::string iter, std::shared_ptr<ASTNode> pred)
+        : source(std::move(src)), iterVar(std::move(iter)), predicate(std::move(pred)) {}
+};
+
+// Mapping: "X transformed as <expr>"
+class TransformExpr : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> source;       // The Order to transform
+    std::string iterVar;                   // Iterator variable name for expression
+    std::shared_ptr<ASTNode> transform;    // Expression to apply to each element
+    
+    TransformExpr(std::shared_ptr<ASTNode> src, std::string iter, std::shared_ptr<ASTNode> xform)
+        : source(std::move(src)), iterVar(std::move(iter)), transform(std::move(xform)) {}
+};
+
+// Index assignment: "X[i] be Y"
+class IndexAssignStmt : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> target;       // The Order or Tome
+    std::shared_ptr<ASTNode> index;        // The index expression
+    std::shared_ptr<ASTNode> value;        // The new value
+    
+    IndexAssignStmt(std::shared_ptr<ASTNode> tgt, std::shared_ptr<ASTNode> idx, std::shared_ptr<ASTNode> val)
+        : target(std::move(tgt)), index(std::move(idx)), value(std::move(val)) {}
+};
     
     
 

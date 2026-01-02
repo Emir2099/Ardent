@@ -1,7 +1,7 @@
-# Ardent 3.0 Language Specification
+# Ardent 3.1 Language Specification
 
 **Status:** FROZEN  
-**Version:** 3.0.0  
+**Version:** 3.1.0  
 **Date:** 2026-01-02  
 
 > *"Where code becomes poetry, and logic sings in verse."*
@@ -46,6 +46,7 @@ The following are reserved and cannot be used as identifiers:
 - `Should`, `fates`, `decree`, `Then`, `Otherwise`
 - `Whilst`, `sun`, `doth`, `rise`
 - `For`, `each`, `in`
+- `abideth`, `where`, `transformed`, `as` 
 
 **Spells (Functions):**
 - `By`, `decree`, `elders`, `spell`, `cast`, `upon`
@@ -175,6 +176,23 @@ Let it be known, an order named heroes is of ["Aragorn", "Legolas", "Gimli"].
 - `Amend entry <index> of <name> to <value>` — update
 - `Remove entry <index> from <name>` — delete
 
+**Index Assignment (3.1+):**
+```ardent
+<order>[<index>] be <value>
+```
+
+**Filtering (3.1+):**
+```ardent
+<order> where <predicate>   — returns new order with matching elements
+```
+The implicit variable `it` refers to each element during filtering.
+
+**Transformation (3.1+):**
+```ardent
+<order> transformed as <expression>   — returns new order with mapped elements
+```
+The implicit variable `it` refers to each element during transformation.
+
 ### 3.3 Tome (Map) Declaration
 
 ```ardent
@@ -253,13 +271,28 @@ Otherwise:
 ```ardent
 Whilst the sun doth rise and <condition>:
     <body>
+Done
 ```
 
 **For-Each Loop:**
 ```ardent
 For each <var> in <collection>:
     <body>
+Done
 ```
+
+**For-Each with Key-Value (3.1+ Tome iteration):**
+```ardent
+For each <key>, <value> in <tome>:
+    <body>
+Done
+```
+
+**Membership Test (3.1+):**
+```ardent
+<value> abideth in <collection>
+```
+Returns `True` if the value exists in the order, or if the key exists in the tome.
 
 **Ascending Range:**
 ```ardent
@@ -415,6 +448,12 @@ Invoke the spirit of <module>.<function> upon <args>
 - `time.now`, `time.sleep`, `time.sleep_ms`, `time.measure`
 - `io.read`, `io.write`, `io.exists`
 
+**Collection Spirits (3.1+):**
+- `order.keys(<tome>)` — returns an order of all keys in a tome
+- `order.new(<size>, <default>)` — creates a new order of given size with default value
+- `order.append(<order>, <value>)` — appends value to order, returns new order
+- `has_key(<tome>, <key>)` — returns True if key exists in tome
+
 ---
 
 ## 11. Async Foundation (2.4+)
@@ -542,6 +581,9 @@ if-stmt      ::= 'Should' 'the' 'fates' 'decree' expression ':' block ('Otherwis
 while-stmt   ::= 'Whilst' 'the' 'sun' 'doth' 'rise' 'and' expression ':' block
 
 for-stmt     ::= 'For' 'each' IDENTIFIER 'in' expression ':' block
+               | 'For' 'each' IDENTIFIER ',' IDENTIFIER 'in' expression ':' block  // 3.1 key-value
+
+index-assign ::= postfix-expr '[' expression ']' 'be' expression  // 3.1
 
 return-stmt  ::= 'Return' 'with' expression '.'?
 
@@ -568,11 +610,13 @@ expression   ::= or-expr
 or-expr      ::= and-expr ('or' and-expr)*
 and-expr     ::= not-expr ('and' not-expr)*
 not-expr     ::= 'not' not-expr | comparison
-comparison   ::= additive (comp-op additive)?
+comparison   ::= contains-expr (comp-op contains-expr)?
+contains-expr ::= additive ('abideth' 'in' additive)?  // 3.1 membership
 comp-op      ::= 'surpasseth' | 'remaineth' 'beneath' | 'equals'
 additive     ::= term (('+' | '-') term)*
 term         ::= factor (('*' | '/' | '%') factor)*
-factor       ::= literal | IDENTIFIER | call | '(' expression ')'
+factor       ::= postfix | literal | IDENTIFIER | call | '(' expression ')'
+postfix      ::= factor ('where' expression | 'transformed' 'as' expression)*  // 3.1 filter/map
 call         ::= IDENTIFIER '(' arg-list? ')'
 arg-list     ::= expression (',' expression)*
 literal      ::= NUMBER | STRING | 'True' | 'False' | order-lit | tome-lit
