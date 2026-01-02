@@ -553,11 +553,11 @@ This release introduces optional static typing while preserving full backward co
 ### Short-Form Syntax
 
 ```ardent
-~~ New concise form
+Note: New concise form
 let x:whole be 42
 let name be "Gandalf"
 
-~~ Verbose form (still works)
+Note: Verbose form (still works)
 Let it be known throughout the land, a number named x is of 42.
 ```
 
@@ -642,8 +642,8 @@ Scrolls install to `~/.ardent/scrolls/<name>@<version>/`:
 The `inscribe` statement automatically resolves installed packages:
 
 ```ardent
-inscribe "truths"         § Resolves from ~/.ardent/scrolls/
-inscribe "heroes@2.0"     § Version-pinned import
+inscribe "truths"         # Resolves from ~/.ardent/scrolls/
+inscribe "heroes@2.0"     # Version-pinned import
 ```
 
 ---
