@@ -131,7 +131,7 @@ ardent --aot examples/heroes.ardent -o heroes
 Ardent is open source and welcomes contributors:
 
 - **Repository**: [github.com/Emir2099/Ardent](https://github.com/Emir2099/Ardent)
-- **Documentation**: [ardent-lang.org/docs](https://ardent-lang.org/docs)
+- **Documentation**: [ardent-lang.org/docs](https://github.com/Emir2099/Ardent/blob/main/SPEC.md)
 - **Community**: Discord, forums, and more
 
 ---
