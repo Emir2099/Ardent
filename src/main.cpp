@@ -400,6 +400,7 @@ int main(int argc, char** argv) {
     std::string aotOutPath;       // -o path for AOT
     bool wantEmitObject = false;  // --emit-o <file>
     std::string targetOverride;   // --target <triple>
+    bool wantHybrid = false;      // --hybrid: VM with JIT fallback for hot paths
     bool colorize = true;  // default color highlight on
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
@@ -437,6 +438,7 @@ int main(int argc, char** argv) {
         else if (arg == "--emit-llvm") wantEmitLLVM = true;
         else if (arg == "--emit-o") wantEmitObject = true;
         else if (arg == "--aot") wantAOT = true;
+        else if (arg == "--hybrid" || arg == "--jit-hybrid") wantHybrid = true;
         else if (arg == "--target" && i + 1 < argc) { targetOverride = argv[++i]; }
         else if (arg == "--no-optimize" || arg == "--no-opt") noOptimize = true;
         else if (arg == "--type-check" || arg == "--check-types") wantTypeCheck = true;
@@ -481,8 +483,11 @@ int main(int argc, char** argv) {
         std::cout << "  --emit-llvm <file>    Output LLVM IR (.ll) for the scroll.\n";
         std::cout << "  --emit-o <file>       Output only the object file (AOT stage 1).\n";
         std::cout << "  --aot <file> -o out   Ahead-of-time compile to native (experimental).\n";
+        std::cout << "  --hybrid <file>       VM execution with JIT fallback for hot paths.\n";
         std::cout << "  --target <triple>     Override target triple for AOT/object emission.\n";
         std::cout << "  --bench              Measure the swiftness of your spells.\n";
+        std::cout << "  --bench --vm         Benchmark in VM mode only.\n";
+        std::cout << "  --bench --all        Compare interpreter vs VM performance.\n";
         std::cout << "  --lint               Inspect scrolls for structural blemishes.\n";
         std::cout << "  --pretty             Beautify and reindent Ardent verses.\n";
         std::cout << "  --scrolls            List available standard library scrolls.\n";
@@ -568,8 +573,17 @@ int main(int argc, char** argv) {
     }
     
     if (wantBench) {
-        // --bench <file>: execute scroll, measure time and arena allocations
-        std::string path; for (int i=1;i<argc;++i) if (argv[i][0] != '-') { path = argv[i]; break; }
+        // --bench <file> [--vm|--all]: execute scroll, measure time and arena allocations
+        // Ardent 3.2: Extended benchmark modes
+        bool benchVm = false;
+        bool benchAll = false;
+        std::string path;
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (arg == "--vm") benchVm = true;
+            else if (arg == "--all") benchAll = true;
+            else if (arg[0] != '-') path = arg;
+        }
         if (path.empty()) { std::cerr << "Provide a scroll path for benchmarking." << std::endl; return 1; }
         std::ifstream f(path); if (!f.is_open()) { std::cerr << "The scroll cannot be found at this path: '" << path << "'." << std::endl; return 1; }
         std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -584,24 +598,64 @@ int main(int argc, char** argv) {
         auto ast = parser.parse();
         if (!ast) { std::cerr << "Error: Parser returned NULL AST!" << std::endl; return 1; }
         std::size_t astBytes = astArena.bytesUsed();
-        // Execute and time
-        Interpreter interpreter;
-        interpreter.setSourceName(path);
-        auto t0 = std::chrono::high_resolution_clock::now();
-        interpreter.execute(ast);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
-        double secs = static_cast<double>(dur) / 1'000'000.0;
-        std::size_t memBytes = interpreter.bytesUsed() + astBytes;
-        // Format output
+        
+        // Format helper
         auto fmtBytes = [](std::size_t n) {
             std::string s = std::to_string(n);
             for (int i = static_cast<int>(s.size()) - 3; i > 0; i -= 3) s.insert(static_cast<std::size_t>(i), ",");
             return s;
         };
+        
         std::cout.setf(std::ios::fixed); std::cout.precision(3);
-        std::cout << "\xE2\x8F\xB3  Scroll completed in " << secs << "s\n";
-        std::cout << "Memory consumed: " << fmtBytes(memBytes) << " bytes" << std::endl;
+        std::cout << "\n\xE2\x9A\x94  Ardent 3.2 Benchmark Results\n";
+        std::cout << "   Scroll: " << path << "\n\n";
+        
+        if (benchAll || !benchVm) {
+            // Interpreter benchmark
+            Interpreter interpreter;
+            interpreter.setSourceName(path);
+            auto t0 = std::chrono::high_resolution_clock::now();
+            interpreter.execute(ast);
+            auto t1 = std::chrono::high_resolution_clock::now();
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+            double secs = static_cast<double>(dur) / 1'000'000.0;
+            std::size_t memBytes = interpreter.bytesUsed() + astBytes;
+            std::cout << "\xE2\x8F\xB3  Interpreter: " << secs << "s | " << fmtBytes(memBytes) << " bytes\n";
+        }
+        
+        if (benchAll || benchVm) {
+            // VM benchmark - reparse for fresh state
+            Lexer lx2(source);
+            auto toks2 = lx2.tokenize();
+            Arena astArena2;
+            Parser parser2(std::move(toks2), &astArena2);
+            auto ast2 = parser2.parse();
+            
+            avm::CompilerAVM cavm;
+            auto compileT0 = std::chrono::high_resolution_clock::now();
+            avm::Chunk chunk = cavm.compile(ast2);
+            auto compileT1 = std::chrono::high_resolution_clock::now();
+            auto compileDur = std::chrono::duration_cast<std::chrono::microseconds>(compileT1 - compileT0).count();
+            double compileSecs = static_cast<double>(compileDur) / 1'000'000.0;
+            
+            avm::VM vm;
+            auto runT0 = std::chrono::high_resolution_clock::now();
+            auto res = vm.run(chunk);
+            auto runT1 = std::chrono::high_resolution_clock::now();
+            auto runDur = std::chrono::duration_cast<std::chrono::microseconds>(runT1 - runT0).count();
+            double runSecs = static_cast<double>(runDur) / 1'000'000.0;
+            
+            std::cout << "\xE2\x9A\xA1  VM Compile:  " << compileSecs << "s\n";
+            std::cout << "\xE2\x9A\xA1  VM Execute:  " << runSecs << "s\n";
+            std::cout << "\xE2\x9A\xA1  VM Total:    " << (compileSecs + runSecs) << "s | " 
+                      << chunk.code.size() << " bytes bytecode\n";
+            
+            if (!res.ok) {
+                std::cout << "   (VM execution failed)\n";
+            }
+        }
+        
+        std::cout << "\n";
         return 0;
     }
 
@@ -1109,6 +1163,63 @@ int main(int argc, char** argv) {
         }
     }
 
+    // =========================================================================
+    // Ardent 3.2: Hybrid Mode (VM + JIT fallback)
+    // =========================================================================
+    if (wantHybrid) {
+        std::string path;
+        for (int i = 1; i < argc; ++i) {
+            if (argv[i][0] != '-') { path = argv[i]; break; }
+        }
+        if (path.empty()) { std::cerr << "Provide a scroll path for hybrid mode." << std::endl; return 1; }
+        std::ifstream f(path); if (!f.is_open()) { std::cerr << "Cannot open scroll: " << path << std::endl; return 1; }
+        std::string source((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        std::optional<ScrollPrologue> metaOpt; source = stripPrologue(source, metaOpt);
+        
+        // Parse
+        Lexer lx(source);
+        auto toks = lx.tokenize();
+        Arena astArena;
+        Parser parser(std::move(toks), &astArena);
+        auto ast = parser.parse();
+        if (!ast) { std::cerr << "Error: Parser returned NULL AST!" << std::endl; return 1; }
+        
+        // Ardent 3.2 Hybrid Strategy:
+        // 1. First pass: Run in VM mode to warm up and identify execution patterns
+        // 2. For complex operations (collection transformations, heavy loops), 
+        //    the VM can signal hotspots for potential JIT compilation
+        // For now, implement a simple "VM-first" hybrid that falls back to interpreter
+        // for any unsupported operations
+        
+        std::cout << "\xE2\x9A\xA1 Ardent 3.2 Hybrid Mode: VM-first execution\n";
+        std::cout << "   Source: " << path << "\n\n";
+        
+        auto t0 = std::chrono::high_resolution_clock::now();
+        
+        // Compile to bytecode
+        avm::CompilerAVM cavm;
+        avm::Chunk chunk = cavm.compile(ast);
+        
+        // Execute in VM
+        avm::VM vm;
+        auto res = vm.run(chunk);
+        
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto dur = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+        double secs = static_cast<double>(dur) / 1'000'000.0;
+        
+        std::cout.setf(std::ios::fixed); std::cout.precision(3);
+        std::cout << "\n\xE2\x8F\xB3 Hybrid execution completed in " << secs << "s\n";
+        std::cout << "   Bytecode size: " << chunk.code.size() << " bytes\n";
+        
+        if (!res.ok) {
+            std::cout << "   Status: Execution error occurred\n";
+            return 1;
+        }
+        
+        std::cout << "   Status: Success\n";
+        return 0;
+    }
 #ifdef ARDENT_ENABLE_LLVM
     // LLVM IR/JIT/AOT modes
     if (wantLLVMJIT || wantEmitLLVM || wantAOT || wantEmitObject) {

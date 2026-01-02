@@ -35,6 +35,54 @@ public:
     llvm::Function* getPrintDecl();
     llvm::Function* getOrCreateSpellDecl(const std::string &name, size_t paramCount);
     llvm::Function* getConcatDecl(); // void concat(ptr a, ptr b, ptr out)
+
+    // =========================================================================
+    // Ardent 3.2: Collection Operations for AOT
+    // =========================================================================
+    
+    // Order (array) operations
+    llvm::Value* makeOrder(const std::vector<llvm::Value*>& elements);
+    llvm::Value* compileArrayLiteral(ArrayLiteral* arr);
+    
+    // Tome (map) operations
+    llvm::Value* makeTome(const std::vector<std::pair<std::string, llvm::Value*>>& entries);
+    llvm::Value* compileObjectLiteral(ObjectLiteral* obj);
+    
+    // Indexing
+    llvm::Value* compileIndexExpr(IndexExpression* idx);
+    void compileIndexAssign(IndexAssignStmt* stmt);
+    
+    // Containment
+    llvm::Value* compileContains(ContainsExpr* contains);
+    
+    // Iteration
+    void compileForEach(ForEachStmt* forEach);
+    
+    // Filtering and transformation
+    llvm::Value* compileWhereExpr(WhereExpr* where);
+    llvm::Value* compileTransformExpr(TransformExpr* transform);
+    
+    // Collection runtime declarations
+    llvm::Function* getOrderNewDecl();
+    llvm::Function* getOrderPushDecl();
+    llvm::Function* getOrderGetDecl();
+    llvm::Function* getOrderSetDecl();
+    llvm::Function* getOrderLenDecl();
+    llvm::Function* getTomeNewDecl();
+    llvm::Function* getTomeGetDecl();
+    llvm::Function* getTomeSetDecl();
+    llvm::Function* getContainsDecl();
+    llvm::Function* getIterOrderDecl();
+    llvm::Function* getIterTomeKVDecl();
+    llvm::Function* getIterHasNextDecl();
+    llvm::Function* getIterNextDecl();
+    llvm::Function* getIterNextKVDecl();
+    llvm::Function* getIterFreeDecl();
+    llvm::Function* getMakeOrderDecl();
+    llvm::Function* getMakeTomeDecl();
+    llvm::Function* getExtractOrderDecl();
+    llvm::Function* getExtractTomeDecl();
+
 private:
     llvm::LLVMContext &ctx;
     llvm::Module &mod;

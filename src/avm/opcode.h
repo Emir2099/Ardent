@@ -41,9 +41,20 @@ enum class OpCode : uint8_t {
     OP_CALL = 0x40,         // u16: func id, u8 argc
     OP_RET  = 0x41,
 
-    // Collections (placeholders)
-    OP_MAKE_ORDER = 0x50,   // u16: count
-    OP_MAKE_TOME  = 0x51,   // u16: count (key/value pairs)
+    // Collections (Ardent 3.1+)
+    OP_MAKE_ORDER = 0x50,   // u16: count - pop count values, push Order
+    OP_MAKE_TOME  = 0x51,   // u16: count (key/value pairs) - pop 2*count, push Tome
+    OP_ORDER_GET  = 0x52,   // pop index, pop order, push element
+    OP_ORDER_SET  = 0x53,   // pop value, pop index, pop order, mutate and push order
+    OP_ORDER_LEN  = 0x54,   // pop order, push length
+    OP_ORDER_PUSH = 0x55,   // pop value, pop order, push new order with appended value
+    OP_TOME_GET   = 0x56,   // pop key, pop tome, push value
+    OP_TOME_SET   = 0x57,   // pop value, pop key, pop tome, mutate and push tome
+    OP_TOME_HAS   = 0x58,   // pop key, pop tome, push bool
+    OP_CONTAINS   = 0x59,   // pop collection, pop needle, push bool (abideth in)
+    OP_ITER_INIT  = 0x5A,   // pop collection, push iterator state
+    OP_ITER_NEXT  = 0x5B,   // u16: jump offset if done - pop iter, push next val, push iter (or jump)
+    OP_ITER_KV_NEXT = 0x5C, // u16: jump offset if done - for tome key-value iteration
 
     // Native bridge
     OP_NATIVE = 0x60,       // u16: native id, u8 argc

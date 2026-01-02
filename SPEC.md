@@ -1,12 +1,12 @@
-# Ardent 3.1 Language Specification
+# Ardent 3.2 Language Specification
 
 **Status:** FROZEN  
-**Version:** 3.1.0  
+**Version:** 3.2.0  
 **Date:** 2026-01-02  
 
 > *"Where code becomes poetry, and logic sings in verse."*
 
-This document defines the complete syntax and semantics of the Ardent programming language as of version 3.0. All implementations MUST conform to this specification. No breaking changes will be introduced within the 3.x series.
+This document defines the complete syntax and semantics of the Ardent programming language as of version 3.2. All implementations MUST conform to this specification. No breaking changes will be introduced within the 3.x series.
 
 ---
 

@@ -68,6 +68,28 @@ private:
             emitter_.emit(OpCode::OP_RET);
         } else if (auto ifs = std::dynamic_pointer_cast<IfStatement>(n)) {
             emitIf(ifs);
+        } 
+        // ============================================================
+        // Collection Operations (Ardent 3.1+)
+        // ============================================================
+        else if (auto forEach = std::dynamic_pointer_cast<ForEachStmt>(n)) {
+            emitForEach(forEach);
+        } else if (auto contains = std::dynamic_pointer_cast<ContainsExpr>(n)) {
+            emitContains(contains);
+        } else if (auto where = std::dynamic_pointer_cast<WhereExpr>(n)) {
+            emitWhere(where);
+        } else if (auto transform = std::dynamic_pointer_cast<TransformExpr>(n)) {
+            emitTransform(transform);
+        } else if (auto idxAssign = std::dynamic_pointer_cast<IndexAssignStmt>(n)) {
+            emitIndexAssign(idxAssign);
+        } else if (auto arrLit = std::dynamic_pointer_cast<ArrayLiteral>(n)) {
+            emitArrayLiteral(arrLit);
+        } else if (auto objLit = std::dynamic_pointer_cast<ObjectLiteral>(n)) {
+            emitObjectLiteral(objLit);
+        } else if (auto idx = std::dynamic_pointer_cast<IndexExpression>(n)) {
+            emitIndexExpression(idx);
+        } else if (auto varDecl = std::dynamic_pointer_cast<VariableDeclaration>(n)) {
+            emitVariableDeclaration(varDecl);
         } else {
             // Unhandled node types are ignored in initial compiler stage.
         }
@@ -177,6 +199,231 @@ private:
         emitNode(ifs->elseBranch);
         // Patch end jump target
         patchOperand(patchIndexEnd);
+    }
+
+    // ============================================================
+    // Collection Operations (Ardent 3.1+ - Forged Verses 3.2 VM)
+    // ============================================================
+    
+    void emitForEach(const std::shared_ptr<ForEachStmt>& forEach) {
+        // Emit collection expression, then create iterator
+        emitNode(forEach->collection);
+        emitter_.emit(OpCode::OP_ITER_INIT);
+        
+        // Store iterator in a temporary slot
+        uint16_t iterSlot = symbols_.ensureSlot("__iter__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        // Loop start position
+        size_t loopStart = emitter_.codeSize();
+        
+        // Load iterator and get next
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(iterSlot);
+        
+        OpCode nextOp = forEach->hasTwoVars ? OpCode::OP_ITER_KV_NEXT : OpCode::OP_ITER_NEXT;
+        emitter_.emit(nextOp);
+        size_t exitJumpOperand = emitter_.codeSize();
+        emitter_.emit_u16(0); // placeholder for exit jump
+        patches_.push_back({exitJumpOperand});
+        size_t exitPatchIdx = patches_.size() - 1;
+        
+        // Store updated iterator
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        if (forEach->hasTwoVars) {
+            // Stack has: key, value - store value first, then key
+            uint16_t valSlot = symbols_.ensureSlot(forEach->valueVar);
+            emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(valSlot);
+            uint16_t keySlot = symbols_.ensureSlot(forEach->iterVar);
+            emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(keySlot);
+        } else {
+            // Stack has: value - store it
+            uint16_t varSlot = symbols_.ensureSlot(forEach->iterVar);
+            emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(varSlot);
+        }
+        
+        // Emit body
+        emitNode(forEach->body);
+        
+        // Jump back to loop start
+        emitter_.emit(OpCode::OP_JMP);
+        // Compute relative offset (backward jump)
+        size_t currentPos = emitter_.codeSize();
+        int32_t backOffset = -static_cast<int32_t>(currentPos + 2 - loopStart);
+        emitter_.emit_u16(static_cast<uint16_t>(backOffset & 0xFFFF));
+        
+        // Patch exit jump
+        patchOperand(exitPatchIdx);
+    }
+    
+    void emitContains(const std::shared_ptr<ContainsExpr>& contains) {
+        // Push needle, then haystack, then CONTAINS
+        emitNode(contains->needle);
+        emitNode(contains->haystack);
+        emitter_.emit(OpCode::OP_CONTAINS);
+    }
+    
+    void emitWhere(const std::shared_ptr<WhereExpr>& where) {
+        // Desugar to: create empty result order, iterate source, filter
+        // Push empty order
+        emitter_.emit(OpCode::OP_MAKE_ORDER); emitter_.emit_u16(0);
+        uint16_t resultSlot = symbols_.ensureSlot("__where_result__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(resultSlot);
+        
+        // Initialize iterator on source
+        emitNode(where->source);
+        emitter_.emit(OpCode::OP_ITER_INIT);
+        uint16_t iterSlot = symbols_.ensureSlot("__where_iter__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        // Loop start
+        size_t loopStart = emitter_.codeSize();
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(iterSlot);
+        emitter_.emit(OpCode::OP_ITER_NEXT);
+        size_t exitJumpOperand = emitter_.codeSize();
+        emitter_.emit_u16(0);
+        patches_.push_back({exitJumpOperand});
+        size_t exitPatchIdx = patches_.size() - 1;
+        
+        // Store iterator
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        // Store current element in iter variable
+        uint16_t elemSlot = symbols_.ensureSlot(where->iterVar);
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(elemSlot);
+        
+        // Evaluate predicate
+        emitNode(where->predicate);
+        
+        // If false, jump to loop continue
+        emitter_.emit(OpCode::OP_JMP_IF_FALSE);
+        size_t skipPushOperand = emitter_.codeSize();
+        emitter_.emit_u16(0);
+        patches_.push_back({skipPushOperand});
+        size_t skipPatchIdx = patches_.size() - 1;
+        
+        // Predicate true: append element to result
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(resultSlot);
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(elemSlot);
+        emitter_.emit(OpCode::OP_ORDER_PUSH);
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(resultSlot);
+        
+        // Patch skip jump
+        patchOperand(skipPatchIdx);
+        
+        // Jump back to loop start
+        emitter_.emit(OpCode::OP_JMP);
+        size_t currentPos = emitter_.codeSize();
+        int32_t backOffset = -static_cast<int32_t>(currentPos + 2 - loopStart);
+        emitter_.emit_u16(static_cast<uint16_t>(backOffset & 0xFFFF));
+        
+        // Patch exit jump
+        patchOperand(exitPatchIdx);
+        
+        // Load result onto stack
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(resultSlot);
+    }
+    
+    void emitTransform(const std::shared_ptr<TransformExpr>& transform) {
+        // Similar to where, but always push transformed value
+        emitter_.emit(OpCode::OP_MAKE_ORDER); emitter_.emit_u16(0);
+        uint16_t resultSlot = symbols_.ensureSlot("__transform_result__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(resultSlot);
+        
+        emitNode(transform->source);
+        emitter_.emit(OpCode::OP_ITER_INIT);
+        uint16_t iterSlot = symbols_.ensureSlot("__transform_iter__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        size_t loopStart = emitter_.codeSize();
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(iterSlot);
+        emitter_.emit(OpCode::OP_ITER_NEXT);
+        size_t exitJumpOperand = emitter_.codeSize();
+        emitter_.emit_u16(0);
+        patches_.push_back({exitJumpOperand});
+        size_t exitPatchIdx = patches_.size() - 1;
+        
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(iterSlot);
+        
+        uint16_t elemSlot = symbols_.ensureSlot(transform->iterVar);
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(elemSlot);
+        
+        // Evaluate transform expression
+        emitNode(transform->transform);
+        
+        // Stack now has: [..., transformedValue]
+        // Need to push to result order: ORDER_PUSH expects [order, value] and pushes new order
+        uint16_t tempSlot = symbols_.ensureSlot("__temp__" + std::to_string(emitter_.codeSize()));
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(tempSlot); // store transformed value
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(resultSlot); // load result order
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(tempSlot);   // load transformed value
+        emitter_.emit(OpCode::OP_ORDER_PUSH); // push value to order
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(resultSlot); // store updated order
+        
+        emitter_.emit(OpCode::OP_JMP);
+        size_t currentPos = emitter_.codeSize();
+        int32_t backOffset = -static_cast<int32_t>(currentPos + 2 - loopStart);
+        emitter_.emit_u16(static_cast<uint16_t>(backOffset & 0xFFFF));
+        
+        patchOperand(exitPatchIdx);
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(resultSlot);
+    }
+    
+    void emitIndexAssign(const std::shared_ptr<IndexAssignStmt>& idxAssign) {
+        // Get target variable name
+        auto targetExpr = std::dynamic_pointer_cast<Expression>(idxAssign->target);
+        if (!targetExpr) return;
+        std::string varName = targetExpr->token.value;
+        uint16_t slot;
+        if (!symbols_.lookup(varName, slot)) {
+            slot = symbols_.ensureSlot(varName);
+        }
+        
+        // Load target, push index, push value, ORDER_SET, store back
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(slot);
+        emitNode(idxAssign->index);
+        emitNode(idxAssign->value);
+        emitter_.emit(OpCode::OP_ORDER_SET);
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(slot);
+    }
+    
+    void emitArrayLiteral(const std::shared_ptr<ArrayLiteral>& arr) {
+        // Push all elements, then MAKE_ORDER
+        for (const auto& elem : arr->elements) {
+            emitNode(elem);
+        }
+        emitter_.emit(OpCode::OP_MAKE_ORDER);
+        emitter_.emit_u16(static_cast<uint16_t>(arr->elements.size()));
+    }
+    
+    void emitObjectLiteral(const std::shared_ptr<ObjectLiteral>& obj) {
+        // Push key-value pairs, then MAKE_TOME
+        for (const auto& [key, val] : obj->entries) {
+            uint16_t keyIdx = emitter_.addConst(key);
+            emitter_.emit_push_const(keyIdx);
+            emitNode(val);
+        }
+        emitter_.emit(OpCode::OP_MAKE_TOME);
+        emitter_.emit_u16(static_cast<uint16_t>(obj->entries.size()));
+    }
+    
+    void emitIndexExpression(const std::shared_ptr<IndexExpression>& idx) {
+        emitNode(idx->target);
+        emitNode(idx->index);
+        // Determine if target is Order or Tome at compile time (or emit generic GET)
+        emitter_.emit(OpCode::OP_ORDER_GET); // Default to order; runtime will handle tome
+    }
+    
+    void emitVariableDeclaration(const std::shared_ptr<VariableDeclaration>& decl) {
+        uint16_t slot = symbols_.ensureSlot(decl->varName);
+        if (decl->initializer) {
+            emitNode(decl->initializer);
+        } else {
+            emitter_.emit_push_const(emitter_.addConst(0));
+        }
+        emitter_.emit(OpCode::OP_STORE); emitter_.emit_u16(slot);
+        // Leave value on stack as expression result
+        emitter_.emit(OpCode::OP_LOAD); emitter_.emit_u16(slot);
     }
 
     size_t emitterPosition() const { return emitter_.codeSize(); }

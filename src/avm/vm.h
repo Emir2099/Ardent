@@ -87,8 +87,9 @@ public:
                 case OpCode::OP_NOP: break;
                 case OpCode::OP_JMP: {
                     if (ip + 1 >= code.size()) return {std::nullopt, false};
-                    uint16_t off = read_u16(&code[ip]); ip += 2;
-                    ip += off; // relative from end of operand
+                    uint16_t rawOff = read_u16(&code[ip]); ip += 2;
+                    int16_t off = static_cast<int16_t>(rawOff); // signed offset
+                    ip = static_cast<size_t>(static_cast<ssize_t>(ip) + off);
                     break;
                 }
                 case OpCode::OP_JMP_IF_FALSE: {
@@ -334,6 +335,239 @@ public:
                             return std::get<std::string>(v);
                         };
                         push(toS(a) <= toS(b));
+                    }
+                    break;
+                }
+                // ============================================================
+                // Collection Operations (Ardent 3.1+)
+                // ============================================================
+                case OpCode::OP_MAKE_ORDER: {
+                    if (ip + 1 >= code.size()) return {std::nullopt, false};
+                    uint16_t count = read_u16(&code[ip]); ip += 2;
+                    if (stack.size() < count) return {std::nullopt, false};
+                    auto order = std::make_shared<VMOrder>();
+                    order->elements.resize(count);
+                    for (int i = static_cast<int>(count) - 1; i >= 0; --i) {
+                        Value v = pop();
+                        if (std::holds_alternative<int>(v)) order->elements[i] = std::get<int>(v);
+                        else if (std::holds_alternative<std::string>(v)) order->elements[i] = std::get<std::string>(v);
+                        else if (std::holds_alternative<bool>(v)) order->elements[i] = std::get<bool>(v);
+                    }
+                    push(order);
+                    break;
+                }
+                case OpCode::OP_MAKE_TOME: {
+                    if (ip + 1 >= code.size()) return {std::nullopt, false};
+                    uint16_t count = read_u16(&code[ip]); ip += 2;
+                    if (stack.size() < count * 2) return {std::nullopt, false};
+                    auto tome = std::make_shared<VMTome>();
+                    for (size_t i = 0; i < count; ++i) {
+                        Value val = pop();
+                        Value key = pop();
+                        std::string keyStr;
+                        if (std::holds_alternative<std::string>(key)) keyStr = std::get<std::string>(key);
+                        else continue;
+                        if (std::holds_alternative<int>(val)) tome->entries[keyStr] = std::get<int>(val);
+                        else if (std::holds_alternative<std::string>(val)) tome->entries[keyStr] = std::get<std::string>(val);
+                        else if (std::holds_alternative<bool>(val)) tome->entries[keyStr] = std::get<bool>(val);
+                        tome->keyOrder.push_back(keyStr);
+                    }
+                    push(tome);
+                    break;
+                }
+                case OpCode::OP_ORDER_GET: {
+                    if (stack.size() < 2) return {std::nullopt, false};
+                    Value idxVal = pop();
+                    Value orderVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMOrder>>(orderVal)) return {std::nullopt, false};
+                    if (!std::holds_alternative<int>(idxVal)) return {std::nullopt, false};
+                    auto ord = std::get<std::shared_ptr<VMOrder>>(orderVal);
+                    int idx = std::get<int>(idxVal);
+                    if (idx < 0) idx += static_cast<int>(ord->elements.size());
+                    if (idx < 0 || static_cast<size_t>(idx) >= ord->elements.size()) return {std::nullopt, false};
+                    const auto& elem = ord->elements[idx];
+                    if (std::holds_alternative<int>(elem)) push(std::get<int>(elem));
+                    else if (std::holds_alternative<std::string>(elem)) push(std::get<std::string>(elem));
+                    else push(std::get<bool>(elem));
+                    break;
+                }
+                case OpCode::OP_ORDER_SET: {
+                    if (stack.size() < 3) return {std::nullopt, false};
+                    Value newVal = pop();
+                    Value idxVal = pop();
+                    Value orderVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMOrder>>(orderVal)) return {std::nullopt, false};
+                    if (!std::holds_alternative<int>(idxVal)) return {std::nullopt, false};
+                    auto ord = std::get<std::shared_ptr<VMOrder>>(orderVal);
+                    int idx = std::get<int>(idxVal);
+                    if (idx < 0) idx += static_cast<int>(ord->elements.size());
+                    if (idx < 0 || static_cast<size_t>(idx) >= ord->elements.size()) return {std::nullopt, false};
+                    if (std::holds_alternative<int>(newVal)) ord->elements[idx] = std::get<int>(newVal);
+                    else if (std::holds_alternative<std::string>(newVal)) ord->elements[idx] = std::get<std::string>(newVal);
+                    else if (std::holds_alternative<bool>(newVal)) ord->elements[idx] = std::get<bool>(newVal);
+                    push(ord);
+                    break;
+                }
+                case OpCode::OP_ORDER_LEN: {
+                    if (stack.empty()) return {std::nullopt, false};
+                    Value orderVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMOrder>>(orderVal)) return {std::nullopt, false};
+                    push(static_cast<int>(std::get<std::shared_ptr<VMOrder>>(orderVal)->elements.size()));
+                    break;
+                }
+                case OpCode::OP_ORDER_PUSH: {
+                    if (stack.size() < 2) return {std::nullopt, false};
+                    Value newVal = pop();
+                    Value orderVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMOrder>>(orderVal)) return {std::nullopt, false};
+                    auto ord = std::get<std::shared_ptr<VMOrder>>(orderVal);
+                    // Create new order with appended value
+                    auto newOrd = std::make_shared<VMOrder>();
+                    newOrd->elements = ord->elements;
+                    if (std::holds_alternative<int>(newVal)) newOrd->elements.push_back(std::get<int>(newVal));
+                    else if (std::holds_alternative<std::string>(newVal)) newOrd->elements.push_back(std::get<std::string>(newVal));
+                    else if (std::holds_alternative<bool>(newVal)) newOrd->elements.push_back(std::get<bool>(newVal));
+                    push(newOrd);
+                    break;
+                }
+                case OpCode::OP_TOME_GET: {
+                    if (stack.size() < 2) return {std::nullopt, false};
+                    Value keyVal = pop();
+                    Value tomeVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMTome>>(tomeVal)) return {std::nullopt, false};
+                    if (!std::holds_alternative<std::string>(keyVal)) return {std::nullopt, false};
+                    auto tome = std::get<std::shared_ptr<VMTome>>(tomeVal);
+                    const std::string& key = std::get<std::string>(keyVal);
+                    auto it = tome->entries.find(key);
+                    if (it == tome->entries.end()) { push(0); break; }
+                    const auto& val = it->second;
+                    if (std::holds_alternative<int>(val)) push(std::get<int>(val));
+                    else if (std::holds_alternative<std::string>(val)) push(std::get<std::string>(val));
+                    else push(std::get<bool>(val));
+                    break;
+                }
+                case OpCode::OP_TOME_SET: {
+                    if (stack.size() < 3) return {std::nullopt, false};
+                    Value newVal = pop();
+                    Value keyVal = pop();
+                    Value tomeVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMTome>>(tomeVal)) return {std::nullopt, false};
+                    if (!std::holds_alternative<std::string>(keyVal)) return {std::nullopt, false};
+                    auto tome = std::get<std::shared_ptr<VMTome>>(tomeVal);
+                    const std::string& key = std::get<std::string>(keyVal);
+                    if (tome->entries.find(key) == tome->entries.end()) tome->keyOrder.push_back(key);
+                    if (std::holds_alternative<int>(newVal)) tome->entries[key] = std::get<int>(newVal);
+                    else if (std::holds_alternative<std::string>(newVal)) tome->entries[key] = std::get<std::string>(newVal);
+                    else if (std::holds_alternative<bool>(newVal)) tome->entries[key] = std::get<bool>(newVal);
+                    push(tome);
+                    break;
+                }
+                case OpCode::OP_TOME_HAS: {
+                    if (stack.size() < 2) return {std::nullopt, false};
+                    Value keyVal = pop();
+                    Value tomeVal = pop();
+                    if (!std::holds_alternative<std::shared_ptr<VMTome>>(tomeVal)) return {std::nullopt, false};
+                    if (!std::holds_alternative<std::string>(keyVal)) { push(false); break; }
+                    auto tome = std::get<std::shared_ptr<VMTome>>(tomeVal);
+                    push(tome->entries.find(std::get<std::string>(keyVal)) != tome->entries.end());
+                    break;
+                }
+                case OpCode::OP_CONTAINS: {
+                    // pop collection, pop needle, push bool
+                    if (stack.size() < 2) return {std::nullopt, false};
+                    Value collVal = pop();
+                    Value needleVal = pop();
+                    bool found = false;
+                    if (std::holds_alternative<std::shared_ptr<VMOrder>>(collVal)) {
+                        auto ord = std::get<std::shared_ptr<VMOrder>>(collVal);
+                        for (const auto& elem : ord->elements) {
+                            if (elem.index() == needleVal.index()) {
+                                if (std::holds_alternative<int>(needleVal) && std::holds_alternative<int>(elem)) {
+                                    if (std::get<int>(elem) == std::get<int>(needleVal)) { found = true; break; }
+                                } else if (std::holds_alternative<std::string>(needleVal) && std::holds_alternative<std::string>(elem)) {
+                                    if (std::get<std::string>(elem) == std::get<std::string>(needleVal)) { found = true; break; }
+                                } else if (std::holds_alternative<bool>(needleVal) && std::holds_alternative<bool>(elem)) {
+                                    if (std::get<bool>(elem) == std::get<bool>(needleVal)) { found = true; break; }
+                                }
+                            }
+                        }
+                    } else if (std::holds_alternative<std::shared_ptr<VMTome>>(collVal)) {
+                        // For tome, check key membership
+                        if (std::holds_alternative<std::string>(needleVal)) {
+                            auto tome = std::get<std::shared_ptr<VMTome>>(collVal);
+                            found = tome->entries.find(std::get<std::string>(needleVal)) != tome->entries.end();
+                        }
+                    }
+                    push(found);
+                    break;
+                }
+                case OpCode::OP_ITER_INIT: {
+                    // pop collection, push iterator
+                    if (stack.empty()) return {std::nullopt, false};
+                    Value collVal = pop();
+                    VMIterator iter;
+                    if (std::holds_alternative<std::shared_ptr<VMOrder>>(collVal)) {
+                        iter.kind = VMIterator::Kind::Order;
+                        iter.orderRef = std::get<std::shared_ptr<VMOrder>>(collVal);
+                    } else if (std::holds_alternative<std::shared_ptr<VMTome>>(collVal)) {
+                        iter.kind = VMIterator::Kind::TomeKV;
+                        iter.tomeRef = std::get<std::shared_ptr<VMTome>>(collVal);
+                    } else return {std::nullopt, false};
+                    iter.index = 0;
+                    push(iter);
+                    break;
+                }
+                case OpCode::OP_ITER_NEXT: {
+                    // u16: jump offset if done
+                    if (ip + 1 >= code.size()) return {std::nullopt, false};
+                    uint16_t jumpOff = read_u16(&code[ip]); ip += 2;
+                    if (stack.empty()) return {std::nullopt, false};
+                    Value iterVal = pop();
+                    if (!std::holds_alternative<VMIterator>(iterVal)) return {std::nullopt, false};
+                    VMIterator iter = std::get<VMIterator>(iterVal);
+                    if (iter.kind == VMIterator::Kind::Order) {
+                        if (iter.index >= iter.orderRef->elements.size()) {
+                            ip += jumpOff; // done
+                        } else {
+                            const auto& elem = iter.orderRef->elements[iter.index];
+                            if (std::holds_alternative<int>(elem)) push(std::get<int>(elem));
+                            else if (std::holds_alternative<std::string>(elem)) push(std::get<std::string>(elem));
+                            else push(std::get<bool>(elem));
+                            iter.index++;
+                            push(iter);
+                        }
+                    } else {
+                        // For single-value iteration on tome, just iterate keys
+                        if (iter.index >= iter.tomeRef->keyOrder.size()) {
+                            ip += jumpOff;
+                        } else {
+                            push(iter.tomeRef->keyOrder[iter.index]);
+                            iter.index++;
+                            push(iter);
+                        }
+                    }
+                    break;
+                }
+                case OpCode::OP_ITER_KV_NEXT: {
+                    // u16: jump offset if done - pushes key and value
+                    if (ip + 1 >= code.size()) return {std::nullopt, false};
+                    uint16_t jumpOff = read_u16(&code[ip]); ip += 2;
+                    if (stack.empty()) return {std::nullopt, false};
+                    Value iterVal = pop();
+                    if (!std::holds_alternative<VMIterator>(iterVal)) return {std::nullopt, false};
+                    VMIterator iter = std::get<VMIterator>(iterVal);
+                    if (iter.kind != VMIterator::Kind::TomeKV) return {std::nullopt, false};
+                    if (iter.index >= iter.tomeRef->keyOrder.size()) {
+                        ip += jumpOff; // done
+                    } else {
+                        const std::string& key = iter.tomeRef->keyOrder[iter.index];
+                        const auto& val = iter.tomeRef->entries.at(key);
+                        push(key); // key first
+                        if (std::holds_alternative<int>(val)) push(std::get<int>(val));
+                        else if (std::holds_alternative<std::string>(val)) push(std::get<std::string>(val));
+                        else push(std::get<bool>(val));
+                        iter.index++;
+                        push(iter);
                     }
                     break;
                 }

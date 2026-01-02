@@ -772,6 +772,44 @@ Let it be known, an order named doubled is of [1, 2, 3] transformed as it * 2.
 
 ---
 
+## 🔥 Ardent 3.2 — Forged Verses
+
+> Where bytecode meets the ancient runes, execution flows swift and true.
+
+Ardent 3.2 achieves **full Virtual Ember (VM) parity** for all collection operations introduced in 3.1.
+
+### What's New
+
+| Feature | Description |
+|---------|-------------|
+| **VM Collection Opcodes** | 11 new opcodes for Order/Tome manipulation |
+| **Bytecode Iterator Protocol** | ITER_INIT, ITER_NEXT, ITER_KV_NEXT |
+| **Signed Jump Offsets** | Proper backward jumps for loops |
+| **Compiler Desugaring** | For-each, where, transformed as → efficient bytecode |
+
+### VM Parity Matrix
+
+| Feature | Interpreter | VM 3.2 |
+|---------|-------------|--------|
+| For-each on Order | ✅ | ✅ |
+| For-each key-value on Tome | ✅ | ✅ |
+| `abideth in` containment | ✅ | ✅ |
+| `where` clause filtering | ✅ | ✅ |
+| `transformed as` mapping | ✅ | ✅ |
+| Index assignment | ✅ | ✅ |
+
+### Usage
+
+```bash
+# Run in VM mode
+ardent --vm your_script.ardent
+
+# Disassemble bytecode
+ardent --vm --disassemble your_script.ardent
+```
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

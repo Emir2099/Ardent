@@ -7,11 +7,38 @@
 #include <vector>
 #include <fstream>
 #include <cstring>
+#include <unordered_map>
+#include <memory>
 #include "opcode.h"
 
 namespace avm {
 
-using Value = std::variant<int, std::string, bool>;
+// Forward declarations for collection types
+struct VMOrder;
+struct VMTome;
+
+// VMOrder: heap-allocated vector of Values (for 3.1 collection support)
+struct VMOrder {
+    std::vector<std::variant<int, std::string, bool>> elements;
+};
+
+// VMTome: heap-allocated map of string keys to Values (for 3.1 collection support)
+struct VMTome {
+    std::unordered_map<std::string, std::variant<int, std::string, bool>> entries;
+    std::vector<std::string> keyOrder; // preserve insertion order for iteration
+};
+
+// Iterator state for foreach loops
+struct VMIterator {
+    enum class Kind { Order, TomeKV };
+    Kind kind;
+    size_t index{0};
+    std::shared_ptr<VMOrder> orderRef;
+    std::shared_ptr<VMTome> tomeRef;
+};
+
+// Extended Value type supporting collections
+using Value = std::variant<int, std::string, bool, std::shared_ptr<VMOrder>, std::shared_ptr<VMTome>, VMIterator>;
 
 struct Chunk {
     std::vector<uint8_t> code;      // bytecode stream

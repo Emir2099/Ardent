@@ -69,6 +69,34 @@ llvm::Value* IRCompiler::compileExpr(ASTNode* node) {
     using namespace llvm;
     if (!node) return UndefValue::get(getArdentValueTy());
 
+    // Ardent 3.2: Collection literals
+    if (auto *A = dynamic_cast<ArrayLiteral*>(node)) {
+        return compileArrayLiteral(A);
+    }
+    if (auto *O = dynamic_cast<ObjectLiteral*>(node)) {
+        return compileObjectLiteral(O);
+    }
+    
+    // Ardent 3.2: Index expression
+    if (auto *I = dynamic_cast<IndexExpression*>(node)) {
+        return compileIndexExpr(I);
+    }
+    
+    // Ardent 3.2: Containment
+    if (auto *C = dynamic_cast<ContainsExpr*>(node)) {
+        return compileContains(C);
+    }
+    
+    // Ardent 3.2: Where clause
+    if (auto *W = dynamic_cast<WhereExpr*>(node)) {
+        return compileWhereExpr(W);
+    }
+    
+    // Ardent 3.2: Transform expression
+    if (auto *T = dynamic_cast<TransformExpr*>(node)) {
+        return compileTransformExpr(T);
+    }
+
     // Literal or identifier
     if (auto *E = dynamic_cast<Expression*>(node)) {
         const Token &tok = E->token;
@@ -208,6 +236,18 @@ llvm::Value* IRCompiler::compileExpr(ASTNode* node) {
 void IRCompiler::compileStmt(ASTNode* node) {
     using namespace llvm;
     if (!node) return;
+
+    // Ardent 3.2: For-each iteration
+    if (auto *FE = dynamic_cast<ForEachStmt*>(node)) {
+        compileForEach(FE);
+        return;
+    }
+    
+    // Ardent 3.2: Index assignment
+    if (auto *IA = dynamic_cast<IndexAssignStmt*>(node)) {
+        compileIndexAssign(IA);
+        return;
+    }
 
     // Typed variable declaration (2.2)
     if (auto *VD = dynamic_cast<VariableDeclaration*>(node)) {
@@ -572,6 +612,520 @@ llvm::Value* IRCompiler::buildBooleanFromI1(llvm::Value* v) {
     undef = builder.CreateInsertValue(undef, ConstantPointerNull::get(PointerType::get(Type::getInt8Ty(ctx), 0)), {3});
     undef = builder.CreateInsertValue(undef, ConstantInt::get(Type::getInt32Ty(ctx), 0), {4});
     return undef;
+}
+
+// =============================================================================
+// Ardent 3.2: Collection Operations LLVM Lowering
+// =============================================================================
+
+// ----- Collection Runtime Declarations -----
+
+llvm::Function* IRCompiler::getOrderNewDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_order_new")) return fn;
+    // void* ardent_order_new()
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_order_new", mod);
+}
+
+llvm::Function* IRCompiler::getOrderPushDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_order_push")) return fn;
+    // void ardent_order_push(void* order, ArdentValue* val)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_order_push", mod);
+}
+
+llvm::Function* IRCompiler::getOrderGetDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_order_get")) return fn;
+    // void ardent_order_get(void* order, int64_t idx, ArdentValue* out)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i64 = Type::getInt64Ty(ctx);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, i64, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_order_get", mod);
+}
+
+llvm::Function* IRCompiler::getOrderSetDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_order_set")) return fn;
+    // void ardent_order_set(void* order, int64_t idx, ArdentValue* val)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i64 = Type::getInt64Ty(ctx);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, i64, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_order_set", mod);
+}
+
+llvm::Function* IRCompiler::getOrderLenDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_order_len")) return fn;
+    // int64_t ardent_order_len(void* order)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i64 = Type::getInt64Ty(ctx);
+    auto *fty = FunctionType::get(i64, {voidPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_order_len", mod);
+}
+
+llvm::Function* IRCompiler::getTomeNewDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_tome_new")) return fn;
+    // void* ardent_tome_new()
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_tome_new", mod);
+}
+
+llvm::Function* IRCompiler::getTomeGetDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_tome_get")) return fn;
+    // void ardent_tome_get(void* tome, const char* key, ArdentValue* out)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i8PtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, i8PtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_tome_get", mod);
+}
+
+llvm::Function* IRCompiler::getTomeSetDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_tome_set")) return fn;
+    // void ardent_tome_set(void* tome, const char* key, ArdentValue* val)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i8PtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, i8PtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_tome_set", mod);
+}
+
+llvm::Function* IRCompiler::getContainsDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_contains")) return fn;
+    // bool ardent_contains(ArdentValue* collection, ArdentValue* needle)
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *i1 = Type::getInt1Ty(ctx);
+    auto *fty = FunctionType::get(i1, {valPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_contains", mod);
+}
+
+llvm::Function* IRCompiler::getIterOrderDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_order")) return fn;
+    // void* ardent_iter_order(void* order)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {voidPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_order", mod);
+}
+
+llvm::Function* IRCompiler::getIterTomeKVDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_tome_kv")) return fn;
+    // void* ardent_iter_tome_kv(void* tome)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {voidPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_tome_kv", mod);
+}
+
+llvm::Function* IRCompiler::getIterHasNextDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_has_next")) return fn;
+    // bool ardent_iter_has_next(void* iter)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *i1 = Type::getInt1Ty(ctx);
+    auto *fty = FunctionType::get(i1, {voidPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_has_next", mod);
+}
+
+llvm::Function* IRCompiler::getIterNextDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_next")) return fn;
+    // void ardent_iter_next(void* iter, ArdentValue* out)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_next", mod);
+}
+
+llvm::Function* IRCompiler::getIterNextKVDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_next_kv")) return fn;
+    // void ardent_iter_next_kv(void* iter, ArdentValue* keyOut, ArdentValue* valOut)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, valPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_next_kv", mod);
+}
+
+llvm::Function* IRCompiler::getIterFreeDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_iter_free")) return fn;
+    // void ardent_iter_free(void* iter)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_iter_free", mod);
+}
+
+llvm::Function* IRCompiler::getMakeOrderDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_make_order")) return fn;
+    // void ardent_make_order(void* orderPtr, ArdentValue* out)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_make_order", mod);
+}
+
+llvm::Function* IRCompiler::getMakeTomeDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_make_tome")) return fn;
+    // void ardent_make_tome(void* tomePtr, ArdentValue* out)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(Type::getVoidTy(ctx), {voidPtrTy, valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_make_tome", mod);
+}
+
+llvm::Function* IRCompiler::getExtractOrderDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_extract_order")) return fn;
+    // void* ardent_extract_order(ArdentValue* val)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_extract_order", mod);
+}
+
+llvm::Function* IRCompiler::getExtractTomeDecl() {
+    using namespace llvm;
+    if (auto *fn = mod.getFunction("ardent_extract_tome")) return fn;
+    // void* ardent_extract_tome(ArdentValue* val)
+    auto *voidPtrTy = PointerType::get(Type::getInt8Ty(ctx), 0);
+    auto *valPtrTy = PointerType::get(getArdentValueTy(), 0);
+    auto *fty = FunctionType::get(voidPtrTy, {valPtrTy}, false);
+    return Function::Create(fty, Function::ExternalLinkage, "ardent_extract_tome", mod);
+}
+
+// ----- Collection Compilation -----
+
+llvm::Value* IRCompiler::makeOrder(const std::vector<llvm::Value*>& elements) {
+    using namespace llvm;
+    // Create order, push all elements, wrap in ArdentValue
+    auto *orderPtr = builder.CreateCall(getOrderNewDecl(), {}, "order.new");
+    for (auto *elem : elements) {
+        auto *slot = createAllocaInEntry("order.elem");
+        builder.CreateStore(elem, slot);
+        builder.CreateCall(getOrderPushDecl(), {orderPtr, slot});
+    }
+    auto *resultSlot = createAllocaInEntry("order.result");
+    builder.CreateCall(getMakeOrderDecl(), {orderPtr, resultSlot});
+    return builder.CreateLoad(getArdentValueTy(), resultSlot, "order.val");
+}
+
+llvm::Value* IRCompiler::compileArrayLiteral(ArrayLiteral* arr) {
+    if (!arr) return llvm::UndefValue::get(getArdentValueTy());
+    std::vector<llvm::Value*> elements;
+    elements.reserve(arr->elements.size());
+    for (auto &e : arr->elements) {
+        elements.push_back(compileExpr(e.get()));
+    }
+    return makeOrder(elements);
+}
+
+llvm::Value* IRCompiler::makeTome(const std::vector<std::pair<std::string, llvm::Value*>>& entries) {
+    using namespace llvm;
+    auto *tomePtr = builder.CreateCall(getTomeNewDecl(), {}, "tome.new");
+    for (const auto &[key, val] : entries) {
+        // Create string constant for key
+        auto keyArr = ConstantDataArray::getString(ctx, key, true);
+        auto arrTy = cast<ArrayType>(keyArr->getType());
+        std::string gname = std::string(".tome.key.") + std::to_string(nextStringId++);
+        auto *gv = new GlobalVariable(mod, arrTy, true, GlobalValue::PrivateLinkage, keyArr, gname);
+        Constant *zero32 = ConstantInt::get(Type::getInt32Ty(ctx), 0);
+        Constant *indices[] = { zero32, zero32 };
+        Constant *keyPtr = ConstantExpr::getInBoundsGetElementPtr(arrTy, gv, indices);
+        
+        auto *valSlot = createAllocaInEntry("tome.val");
+        builder.CreateStore(val, valSlot);
+        builder.CreateCall(getTomeSetDecl(), {tomePtr, keyPtr, valSlot});
+    }
+    auto *resultSlot = createAllocaInEntry("tome.result");
+    builder.CreateCall(getMakeTomeDecl(), {tomePtr, resultSlot});
+    return builder.CreateLoad(getArdentValueTy(), resultSlot, "tome.val");
+}
+
+llvm::Value* IRCompiler::compileObjectLiteral(ObjectLiteral* obj) {
+    if (!obj) return llvm::UndefValue::get(getArdentValueTy());
+    std::vector<std::pair<std::string, llvm::Value*>> entries;
+    entries.reserve(obj->entries.size());
+    for (auto &[key, valNode] : obj->entries) {
+        entries.emplace_back(key, compileExpr(valNode.get()));
+    }
+    return makeTome(entries);
+}
+
+llvm::Value* IRCompiler::compileIndexExpr(IndexExpression* idx) {
+    using namespace llvm;
+    if (!idx) return UndefValue::get(getArdentValueTy());
+    
+    Value *collVal = compileExpr(idx->object.get());
+    Value *indexVal = compileExpr(idx->index.get());
+    
+    auto *collSlot = createAllocaInEntry("idx.coll");
+    builder.CreateStore(collVal, collSlot);
+    
+    // Check tag to determine if it's an Order (tag=3) or Tome (tag=1 for phrase key)
+    Value *tag = builder.CreateExtractValue(collVal, {0}, "tag");
+    auto *tagOrderConst = ConstantInt::get(Type::getInt32Ty(ctx), 3);
+    Value *isOrder = builder.CreateICmpEQ(tag, tagOrderConst, "isOrder");
+    
+    auto *curFn = currentFunction;
+    auto *orderBB = BasicBlock::Create(ctx, "idx.order", curFn);
+    auto *tomeBB = BasicBlock::Create(ctx, "idx.tome", curFn);
+    auto *mergeBB = BasicBlock::Create(ctx, "idx.merge", curFn);
+    
+    auto *resultSlot = createAllocaInEntry("idx.result");
+    builder.CreateCondBr(isOrder, orderBB, tomeBB);
+    
+    // Order path: use numeric index
+    builder.SetInsertPoint(orderBB);
+    Value *orderPtr = builder.CreateExtractValue(collVal, {3}, "orderPtr"); // coll field is i8*
+    auto *orderPtrVoid = builder.CreateBitCast(orderPtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    Value *numIdx = extractNumber(indexVal);
+    builder.CreateCall(getOrderGetDecl(), {orderPtrVoid, numIdx, resultSlot});
+    builder.CreateBr(mergeBB);
+    
+    // Tome path: use phrase key
+    builder.SetInsertPoint(tomeBB);
+    Value *tomePtr = builder.CreateExtractValue(collVal, {3}, "tomePtr");
+    auto *tomePtrVoid = builder.CreateBitCast(tomePtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    Value *keyPtr = builder.CreateExtractValue(indexVal, {3}, "keyStr");
+    builder.CreateCall(getTomeGetDecl(), {tomePtrVoid, keyPtr, resultSlot});
+    builder.CreateBr(mergeBB);
+    
+    builder.SetInsertPoint(mergeBB);
+    return builder.CreateLoad(getArdentValueTy(), resultSlot, "idx.val");
+}
+
+void IRCompiler::compileIndexAssign(IndexAssignStmt* stmt) {
+    using namespace llvm;
+    if (!stmt) return;
+    
+    Value *collVal = compileExpr(stmt->collection.get());
+    Value *indexVal = compileExpr(stmt->index.get());
+    Value *newVal = compileExpr(stmt->value.get());
+    
+    Value *tag = builder.CreateExtractValue(collVal, {0}, "tag");
+    auto *tagOrderConst = ConstantInt::get(Type::getInt32Ty(ctx), 3);
+    Value *isOrder = builder.CreateICmpEQ(tag, tagOrderConst, "isOrder");
+    
+    auto *curFn = currentFunction;
+    auto *orderBB = BasicBlock::Create(ctx, "assign.order", curFn);
+    auto *tomeBB = BasicBlock::Create(ctx, "assign.tome", curFn);
+    auto *mergeBB = BasicBlock::Create(ctx, "assign.merge", curFn);
+    
+    auto *valSlot = createAllocaInEntry("assign.val");
+    builder.CreateStore(newVal, valSlot);
+    builder.CreateCondBr(isOrder, orderBB, tomeBB);
+    
+    // Order path
+    builder.SetInsertPoint(orderBB);
+    Value *orderPtr = builder.CreateExtractValue(collVal, {3}, "orderPtr");
+    auto *orderPtrVoid = builder.CreateBitCast(orderPtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    Value *numIdx = extractNumber(indexVal);
+    builder.CreateCall(getOrderSetDecl(), {orderPtrVoid, numIdx, valSlot});
+    builder.CreateBr(mergeBB);
+    
+    // Tome path
+    builder.SetInsertPoint(tomeBB);
+    Value *tomePtr = builder.CreateExtractValue(collVal, {3}, "tomePtr");
+    auto *tomePtrVoid = builder.CreateBitCast(tomePtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    Value *keyPtr = builder.CreateExtractValue(indexVal, {3}, "keyStr");
+    builder.CreateCall(getTomeSetDecl(), {tomePtrVoid, keyPtr, valSlot});
+    builder.CreateBr(mergeBB);
+    
+    builder.SetInsertPoint(mergeBB);
+}
+
+llvm::Value* IRCompiler::compileContains(ContainsExpr* contains) {
+    using namespace llvm;
+    if (!contains) return makeBoolean(false);
+    
+    Value *needleVal = compileExpr(contains->needle.get());
+    Value *collVal = compileExpr(contains->collection.get());
+    
+    auto *needleSlot = createAllocaInEntry("contains.needle");
+    auto *collSlot = createAllocaInEntry("contains.coll");
+    builder.CreateStore(needleVal, needleSlot);
+    builder.CreateStore(collVal, collSlot);
+    
+    Value *result = builder.CreateCall(getContainsDecl(), {collSlot, needleSlot}, "contains.res");
+    return buildBooleanFromI1(result);
+}
+
+void IRCompiler::compileForEach(ForEachStmt* forEach) {
+    using namespace llvm;
+    if (!forEach || !currentFunction) return;
+    
+    Value *collVal = compileExpr(forEach->collection.get());
+    auto *collSlot = createAllocaInEntry("foreach.coll");
+    builder.CreateStore(collVal, collSlot);
+    
+    // Check if it's an Order or Tome
+    Value *tag = builder.CreateExtractValue(collVal, {0}, "tag");
+    bool hasKeyVar = !forEach->keyVar.empty();
+    
+    // Create iterator
+    Value *collPtr = builder.CreateExtractValue(collVal, {3}, "collPtr");
+    auto *collPtrVoid = builder.CreateBitCast(collPtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    
+    Value *iter;
+    if (hasKeyVar) {
+        iter = builder.CreateCall(getIterTomeKVDecl(), {collPtrVoid}, "iter.kv");
+    } else {
+        iter = builder.CreateCall(getIterOrderDecl(), {collPtrVoid}, "iter");
+    }
+    
+    // Allocate iteration variables
+    auto *valSlot = getOrCreateVar(forEach->valueVar);
+    llvm::AllocaInst *keySlot = nullptr;
+    if (hasKeyVar) {
+        keySlot = getOrCreateVar(forEach->keyVar);
+    }
+    
+    // Loop structure
+    auto *loopCond = BasicBlock::Create(ctx, "foreach.cond", currentFunction);
+    auto *loopBody = BasicBlock::Create(ctx, "foreach.body", currentFunction);
+    auto *loopEnd = BasicBlock::Create(ctx, "foreach.end", currentFunction);
+    
+    builder.CreateBr(loopCond);
+    
+    // Condition: check if iterator has more elements
+    builder.SetInsertPoint(loopCond);
+    Value *hasNext = builder.CreateCall(getIterHasNextDecl(), {iter}, "hasNext");
+    builder.CreateCondBr(hasNext, loopBody, loopEnd);
+    
+    // Body: get next element(s) and execute body
+    builder.SetInsertPoint(loopBody);
+    if (hasKeyVar) {
+        builder.CreateCall(getIterNextKVDecl(), {iter, keySlot, valSlot});
+    } else {
+        builder.CreateCall(getIterNextDecl(), {iter, valSlot});
+    }
+    
+    // Compile loop body statements
+    compileStmt(forEach->body.get());
+    
+    // Back to condition (if no terminator yet)
+    if (!builder.GetInsertBlock()->getTerminator()) {
+        builder.CreateBr(loopCond);
+    }
+    
+    // End
+    builder.SetInsertPoint(loopEnd);
+    builder.CreateCall(getIterFreeDecl(), {iter});
+}
+
+llvm::Value* IRCompiler::compileWhereExpr(WhereExpr* where) {
+    using namespace llvm;
+    if (!where || !currentFunction) return UndefValue::get(getArdentValueTy());
+    
+    Value *collVal = compileExpr(where->collection.get());
+    Value *collPtr = builder.CreateExtractValue(collVal, {3}, "collPtr");
+    auto *collPtrVoid = builder.CreateBitCast(collPtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    
+    // Create result order
+    auto *resultOrderPtr = builder.CreateCall(getOrderNewDecl(), {}, "where.result");
+    
+    // Create iterator
+    auto *iter = builder.CreateCall(getIterOrderDecl(), {collPtrVoid}, "where.iter");
+    
+    // Create iteration variable slot
+    auto *elemSlot = getOrCreateVar(where->itemVar);
+    
+    auto *loopCond = BasicBlock::Create(ctx, "where.cond", currentFunction);
+    auto *loopBody = BasicBlock::Create(ctx, "where.body", currentFunction);
+    auto *pushBB = BasicBlock::Create(ctx, "where.push", currentFunction);
+    auto *contBB = BasicBlock::Create(ctx, "where.cont", currentFunction);
+    auto *loopEnd = BasicBlock::Create(ctx, "where.end", currentFunction);
+    
+    builder.CreateBr(loopCond);
+    
+    builder.SetInsertPoint(loopCond);
+    Value *hasNext = builder.CreateCall(getIterHasNextDecl(), {iter}, "hasNext");
+    builder.CreateCondBr(hasNext, loopBody, loopEnd);
+    
+    builder.SetInsertPoint(loopBody);
+    builder.CreateCall(getIterNextDecl(), {iter, elemSlot});
+    
+    // Compile predicate
+    Value *predResult = compileExpr(where->predicate.get());
+    Value *predBool = extractBoolean(predResult);
+    builder.CreateCondBr(predBool, pushBB, contBB);
+    
+    builder.SetInsertPoint(pushBB);
+    builder.CreateCall(getOrderPushDecl(), {resultOrderPtr, elemSlot});
+    builder.CreateBr(contBB);
+    
+    builder.SetInsertPoint(contBB);
+    builder.CreateBr(loopCond);
+    
+    builder.SetInsertPoint(loopEnd);
+    builder.CreateCall(getIterFreeDecl(), {iter});
+    
+    // Wrap result order into ArdentValue
+    auto *resultSlot = createAllocaInEntry("where.out");
+    builder.CreateCall(getMakeOrderDecl(), {resultOrderPtr, resultSlot});
+    return builder.CreateLoad(getArdentValueTy(), resultSlot, "where.val");
+}
+
+llvm::Value* IRCompiler::compileTransformExpr(TransformExpr* transform) {
+    using namespace llvm;
+    if (!transform || !currentFunction) return UndefValue::get(getArdentValueTy());
+    
+    Value *collVal = compileExpr(transform->collection.get());
+    Value *collPtr = builder.CreateExtractValue(collVal, {3}, "collPtr");
+    auto *collPtrVoid = builder.CreateBitCast(collPtr, PointerType::get(Type::getInt8Ty(ctx), 0));
+    
+    // Create result order
+    auto *resultOrderPtr = builder.CreateCall(getOrderNewDecl(), {}, "transform.result");
+    
+    // Create iterator
+    auto *iter = builder.CreateCall(getIterOrderDecl(), {collPtrVoid}, "transform.iter");
+    
+    // Create iteration variable slot
+    auto *elemSlot = getOrCreateVar(transform->itemVar);
+    
+    auto *loopCond = BasicBlock::Create(ctx, "transform.cond", currentFunction);
+    auto *loopBody = BasicBlock::Create(ctx, "transform.body", currentFunction);
+    auto *loopEnd = BasicBlock::Create(ctx, "transform.end", currentFunction);
+    
+    builder.CreateBr(loopCond);
+    
+    builder.SetInsertPoint(loopCond);
+    Value *hasNext = builder.CreateCall(getIterHasNextDecl(), {iter}, "hasNext");
+    builder.CreateCondBr(hasNext, loopBody, loopEnd);
+    
+    builder.SetInsertPoint(loopBody);
+    builder.CreateCall(getIterNextDecl(), {iter, elemSlot});
+    
+    // Compile transformation expression
+    Value *transResult = compileExpr(transform->transformation.get());
+    auto *transSlot = createAllocaInEntry("transform.elem");
+    builder.CreateStore(transResult, transSlot);
+    builder.CreateCall(getOrderPushDecl(), {resultOrderPtr, transSlot});
+    builder.CreateBr(loopCond);
+    
+    builder.SetInsertPoint(loopEnd);
+    builder.CreateCall(getIterFreeDecl(), {iter});
+    
+    // Wrap result order into ArdentValue
+    auto *resultSlot = createAllocaInEntry("transform.out");
+    builder.CreateCall(getMakeOrderDecl(), {resultOrderPtr, resultSlot});
+    return builder.CreateLoad(getArdentValueTy(), resultSlot, "transform.val");
 }
 
 #endif // ARDENT_ENABLE_LLVM
