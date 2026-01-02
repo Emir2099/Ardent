@@ -248,6 +248,49 @@ std::vector<Token> Lexer::tokenize() {
         if (std::isspace(currentChar)) {
             advance();
         }
+        // ========== COMMENT HANDLING (Ardent 3.2) ==========
+        // Line comment: "Note:" consumes rest of line
+        else if (input.substr(currentPos, 5) == "Note:") {
+            currentPos += 5;
+            // Consume rest of line
+            while (currentPos < input.length() && input[currentPos] != '\n') {
+                currentPos++;
+            }
+            if (currentPos < input.length()) currentPos++; // skip newline
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+            // Comment is ignored (not added to tokens)
+        }
+        // Block comment: "Aside:" ... "End Aside"
+        else if (input.substr(currentPos, 6) == "Aside:") {
+            currentPos += 6;
+            // Find "End Aside"
+            size_t endPos = input.find("End Aside", currentPos);
+            if (endPos != std::string::npos) {
+                currentPos = endPos + 9; // skip "End Aside"
+            } else {
+                // No closing tag, consume rest of input
+                currentPos = input.length();
+            }
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+            // Block comment is ignored
+        }
+        // Documentation comment: "Proclaim:" ... captures until spell definition or blank line
+        else if (input.substr(currentPos, 9) == "Proclaim:") {
+            size_t start = currentPos + 9;
+            currentPos = start;
+            // Find end: next "By decree" or double newline or "Spell" at line start
+            std::string docContent;
+            while (currentPos < input.length()) {
+                // Check for end markers
+                if (input.substr(currentPos, 23) == "By decree of the elders") break;
+                if (currentPos + 1 < input.length() && input[currentPos] == '\n' && input[currentPos + 1] == '\n') break;
+                docContent += input[currentPos];
+                currentPos++;
+            }
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+            // Optionally store doc comment (for --doc or IDE support)
+            // For now, ignored like other comments
+        }
         // Multi-word phrases
         else if (std::regex_search(input.substr(currentPos), std::regex("^let\\s+it\\s+be\\s+known", std::regex_constants::icase))) {
             tokens.push_back(parseLet());
@@ -564,6 +607,16 @@ std::vector<Token> Lexer::tokenize() {
 else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))) {
     tokens.push_back(parseNumber());
 }
+        // Inline comment: # consumes rest of line (Ardent 3.2)
+        else if (currentChar == '#') {
+            // Consume rest of line
+            while (currentPos < input.length() && input[currentPos] != '\n') {
+                currentPos++;
+            }
+            if (currentPos < input.length()) currentPos++; // skip newline
+            currentChar = (currentPos < input.length() ? input[currentPos] : '\0');
+            // Inline comment is ignored
+        }
         else if (currentChar == '+' || currentChar == '-' ||
                  currentChar == '*' || currentChar == '/' ||
                  currentChar == '%' || currentChar == '=') {

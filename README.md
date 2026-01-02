@@ -810,6 +810,53 @@ ardent --vm --disassemble your_script.ardent
 
 ---
 
+## 📜 Ardent 3.2.1 — Marginal Notes
+
+> Every scroll deserves its annotations, every verse its whispered wisdom.
+
+Ardent 3.2.1 introduces **Ardent-themed comment syntax** — four distinct styles that maintain the language's narrative elegance.
+
+### Comment Syntax
+
+| Type | Syntax | Purpose |
+|------|--------|---------|
+| **Line Comment** | `Note:` | Marginal annotations |
+| **Inline Comment** | `#` | Brief whispers |
+| **Block Comment** | `Aside:` ... `End Aside` | Multi-line explanations |
+| **Doc Comment** | `Proclaim:` | Spell documentation |
+
+### Examples
+
+```ardent
+Note: This loop counts the heroes
+For each hero in heroes:
+    Let it be proclaimed: hero
+Done
+
+Let it be known, a number named age is of 87 winters.  # the years weigh heavy
+
+Aside:
+    The following rite is dangerous.
+    It should not be altered lightly.
+End Aside
+
+Proclaim:
+    This spell blesses a warrior.
+    It is pure and deterministic.
+By decree of the elders, a spell named bless is cast upon a warrior known as name:
+    And let it return "Blessed " + name
+```
+
+### Also in 3.2.1
+
+| Feature | Description |
+|---------|-------------|
+| **Benchmark Suite** | `--bench`, `--bench --vm`, `--bench --all` |
+| **Hybrid Mode** | `--hybrid` for automatic backend selection |
+| **PowerShell Runner** | `benchmarks/run_benchmarks.ps1` |
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

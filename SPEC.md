@@ -1,7 +1,7 @@
 # Ardent 3.2 Language Specification
 
 **Status:** FROZEN  
-**Version:** 3.2.0  
+**Version:** 3.2.1  
 **Date:** 2026-01-02  
 
 > *"Where code becomes poetry, and logic sings in verse."*
@@ -93,9 +93,42 @@ The following are reserved and cannot be used as identifiers:
 | `not` | Logical NOT | 6 (unary) |
 
 ### 1.4 Whitespace and Comments
+
 Whitespace (space, tab, newline) separates tokens but has no semantic meaning.
 
-**Note:** As of 3.0, Ardent has no comment syntax. All text is interpreted as code or part of phrase literals.
+#### 1.4.1 Line Comments (Marginal Notes)
+```ardent
+Note: This loop counts the heroes
+For each hero in heroes:
+    Let it be proclaimed: hero
+Done
+```
+The `Note:` keyword consumes the rest of the line. It is ignored by the parser.
+
+#### 1.4.2 Inline Comments (Whispers)
+```ardent
+Let it be known, a number named age is of 87 winters.  # the years weigh heavy
+```
+The `#` character starts an inline comment that continues to the end of the line. Use sparingly to preserve poetic flow.
+
+#### 1.4.3 Block Comments (Asides)
+```ardent
+Aside:
+    The following rite is dangerous.
+    It should not be altered lightly.
+End Aside
+```
+Block comments span multiple lines. Everything between `Aside:` and `End Aside` is ignored.
+
+#### 1.4.4 Documentation Comments (Prologue Annotations)
+```ardent
+Proclaim:
+    This spell blesses a warrior.
+    It is pure and deterministic.
+By decree of the elders, a spell named bless is cast upon a warrior known as name:
+    And let it return "Blessed " + name
+```
+Documentation comments are captured for `--doc` generation, IDE hover help, and the Scrollsmith registry. They must immediately precede a spell definition.
 
 ---
 
