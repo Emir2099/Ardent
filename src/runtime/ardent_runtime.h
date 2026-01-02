@@ -1,6 +1,17 @@
 #pragma once
+// ─────────────────────────────────────────────────────────────────────────
+// Ardent 3.0 Runtime ABI — FROZEN
+// ─────────────────────────────────────────────────────────────────────────
+// This header defines the stable binary interface between Ardent-compiled
+// code and the runtime library. Changes to struct layouts or function
+// signatures in this file are BREAKING CHANGES.
+//
+// ABI Version: 1.0 (Ardent 3.0)
+// Stability: FROZEN - no breaking changes until Ardent 4.0
+// ─────────────────────────────────────────────────────────────────────────
 #include <cstdint>
 #define ARDENT_RT_API
+#define ARDENT_ABI_VERSION 1
 
 extern "C" {
 

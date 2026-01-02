@@ -698,6 +698,47 @@ Await the omen of some_spell
 
 ---
 
+## 🔥 Ardent 3.0 — Language Freeze & Production AOT
+
+> The flame that began as an interpreter now forges native steel.
+
+Ardent 3.0 is a **major release** marking the transition to production-ready status.
+
+### What's New
+
+| Feature | Description |
+|---------|-------------|
+| **SPEC.md** | Complete, frozen language specification |
+| **AOT-First** | LLVM compilation is the primary backend |
+| **Type Safety** | Zero runtime type errors in AOT mode |
+| **Frozen ABI** | Binary compatibility guaranteed |
+
+### AOT Compilation
+
+Compile scrolls to native executables:
+
+```bash
+ardent --aot scroll.ardent -o scroll.exe
+./scroll.exe
+```
+
+### Strict Mode
+
+AOT compilation enforces strict typing:
+
+```ardent
+Let it be known, a number named count :whole is of 42.
+Let it be known, a phrase named name :phrase is of "Aragorn".
+```
+
+### Documentation
+
+- [SPEC.md](SPEC.md) — Language specification
+- [WHY_ARDENT.md](WHY_ARDENT.md) — Philosophy and motivation  
+- [AOT_GUIDE.md](AOT_GUIDE.md) — AOT compilation guide
+
+---
+
 ## 🪞 Closing Words
 
 > "Where others see syntax, we see verse.

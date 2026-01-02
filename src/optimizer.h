@@ -1,3 +1,10 @@
+// ─────────────────────────────────────────────────────────────────────────
+// Ardent 3.0 Optimizer
+// ─────────────────────────────────────────────────────────────────────────
+// Optimization passes for Ardent AST before LLVM IR generation.
+// Includes: constant folding, purity analysis, partial evaluation,
+// and dead code elimination.
+// ─────────────────────────────────────────────────────────────────────────
 #ifndef ARDENT_OPTIMIZER_H
 #define ARDENT_OPTIMIZER_H
 

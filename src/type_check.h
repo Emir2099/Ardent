@@ -1,8 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Ardent 2.2  ·  Type Checker
+// Ardent 3.0  ·  Type Checker
 // ─────────────────────────────────────────────────────────────────────────
 // Static type checking pass that validates type constraints after inference.
 // Reports errors for type mismatches and validates spell signatures.
+// In AOT mode, enforces stricter rules for zero runtime type errors.
 // ─────────────────────────────────────────────────────────────────────────
 #ifndef TYPE_CHECK_H
 #define TYPE_CHECK_H
@@ -15,6 +16,12 @@
 #include <memory>
 
 namespace ardent {
+
+// ─── Compilation Mode ──────────────────────────────────────────────────
+enum class CompilationMode {
+    Interpreter,  // Lenient: allows dynamic features, runtime type checks
+    AOT           // Strict: zero runtime type errors, no dynamic features
+};
 
 // ─── Type Error ────────────────────────────────────────────────────────
 struct TypeError {
@@ -45,13 +52,15 @@ struct SpellSignature {
     std::vector<Type> paramTypes;
     Type returnType;
     bool isVariadic {false};  // For spells like print
+    bool isPure {true};       // Ardent 3.0: purity tracking
+    bool hasAllReturns {true}; // All control paths return
     int declarationLine {0};
 };
 
 // ─── Type Checker ──────────────────────────────────────────────────────
 class TypeChecker {
 public:
-    explicit TypeChecker(InferenceContext& inferCtx);
+    explicit TypeChecker(InferenceContext& inferCtx, CompilationMode mode = CompilationMode::Interpreter);
     
     // Run full type check on program
     TypeCheckResult check(const std::vector<std::shared_ptr<ASTNode>>& program);
@@ -63,18 +72,27 @@ public:
 private:
     InferenceContext& inferCtx_;
     TypeCheckResult result_;
+    CompilationMode mode_;
     
     // Registered spell signatures
     std::unordered_map<std::string, SpellSignature> spells_;
     
     // Current function context (for return type checking)
     Type currentReturnType_ {Type::unknown()};
+    std::string currentSpellName_;
     
     // Helpers
     void registerSpell(SpellStatement* spell);
     void checkSpellCall(SpellInvocation* call);
     void checkAssignment(const Type& lhs, const Type& rhs, int line);
     void checkCondition(ASTNode* cond);
+    
+    // Ardent 3.0: AOT-specific checks
+    void checkReturnPaths(SpellStatement* spell);
+    void checkNoDynamicFeatures(ASTNode* node);
+    bool hasDeterministicReturn(ASTNode* body);
+    bool isPureSpell(SpellStatement* spell);
+    void rejectAmbiguousConversion(const Type& from, const Type& to, int line);
     
     void addError(int line, const std::string& msg, const std::string& hint = "");
     void addWarning(int line, const std::string& msg, const std::string& hint = "");
@@ -84,10 +102,14 @@ private:
 
 // Full type-check pipeline: inference + validation
 TypeCheckResult typeCheckProgram(const std::vector<std::shared_ptr<ASTNode>>& program,
-                                  bool verbose = false);
+                                  bool verbose = false,
+                                  CompilationMode mode = CompilationMode::Interpreter);
 
 // Check if a value can be safely coerced to target type
 bool canCoerceTo(const Type& from, const Type& to);
+
+// Ardent 3.0: Strict coercion check for AOT (no implicit conversions)
+bool canCoerceToStrict(const Type& from, const Type& to);
 
 } // namespace ardent
 

@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Ardent 2.2  ·  Type Checker Implementation
+// Ardent 3.0  ·  Type Checker Implementation
 // ─────────────────────────────────────────────────────────────────────────
 #include "type_check.h"
 #include <sstream>
 #include <algorithm>
+#include <functional>
 
 namespace ardent {
 
@@ -42,8 +43,8 @@ std::string TypeCheckResult::formatAll() const {
 
 // ─── TypeChecker Implementation ────────────────────────────────────────
 
-TypeChecker::TypeChecker(InferenceContext& inferCtx) 
-    : inferCtx_(inferCtx) {}
+TypeChecker::TypeChecker(InferenceContext& inferCtx, CompilationMode mode) 
+    : inferCtx_(inferCtx), mode_(mode) {}
 
 void TypeChecker::addError(int line, const std::string& msg, const std::string& hint) {
     result_.errors.emplace_back(line, msg, hint, false);
@@ -64,6 +65,20 @@ TypeCheckResult TypeChecker::check(const std::vector<std::shared_ptr<ASTNode>>& 
     // Second pass: type-check all statements
     for (const auto& stmt : program) {
         checkStatement(stmt.get());
+        
+        // AOT mode: check for dynamic features
+        if (mode_ == CompilationMode::AOT) {
+            checkNoDynamicFeatures(stmt.get());
+        }
+    }
+    
+    // AOT mode: verify all spells have deterministic returns
+    if (mode_ == CompilationMode::AOT) {
+        for (const auto& stmt : program) {
+            if (auto* spell = dynamic_cast<SpellStatement*>(stmt.get())) {
+                checkReturnPaths(spell);
+            }
+        }
     }
     
     return result_;
@@ -320,12 +335,13 @@ void TypeChecker::checkCondition(ASTNode* cond) {
 // ─── Convenience Functions ─────────────────────────────────────────────
 
 TypeCheckResult typeCheckProgram(const std::vector<std::shared_ptr<ASTNode>>& program,
-                                  bool verbose) {
+                                  bool verbose,
+                                  CompilationMode mode) {
     // Run inference first
     InferenceContext inferCtx = inferTypes(program, verbose);
     
-    // Then run type checker
-    TypeChecker checker(inferCtx);
+    // Then run type checker with specified mode
+    TypeChecker checker(inferCtx, mode);
     return checker.check(program);
 }
 
@@ -346,6 +362,168 @@ bool canCoerceTo(const Type& from, const Type& to) {
     if (from.kind == TypeKind::Truth && to.kind == TypeKind::Phrase) return true;
     
     return false;
+}
+
+// ─── Ardent 3.0: Strict coercion (AOT mode) ────────────────────────────
+
+bool canCoerceToStrict(const Type& from, const Type& to) {
+    // In strict mode, only exact matches or Any target allowed
+    if (to.kind == TypeKind::Any) return true;
+    if (from.kind == to.kind) return true;
+    return false;
+}
+
+// ─── Ardent 3.0: AOT-Specific Checks ───────────────────────────────────
+
+void TypeChecker::checkReturnPaths(SpellStatement* spell) {
+    if (!spell) return;
+    
+    // Void spells don't need returns
+    if (spell->returnType.kind == TypeKind::Void) return;
+    
+    // Check if all control paths have returns
+    if (!hasDeterministicReturn(spell->body.get())) {
+        addError(spell->sourceLine,
+            "Spell '" + spell->spellName + "' does not return on all paths",
+            "Add 'Return with' statement to all branches");
+    }
+}
+
+bool TypeChecker::hasDeterministicReturn(ASTNode* body) {
+    if (!body) return false;
+    
+    // Block: check if last statement is return, or all branches return
+    if (auto* block = dynamic_cast<BlockStatement*>(body)) {
+        if (block->statements.empty()) return false;
+        
+        for (const auto& stmt : block->statements) {
+            // If we hit a return, we're good
+            if (dynamic_cast<ReturnStatement*>(stmt.get())) {
+                return true;
+            }
+            // If we hit an if with both branches returning, we're good
+            if (auto* ifStmt = dynamic_cast<IfStatement*>(stmt.get())) {
+                if (ifStmt->elseBranch) {
+                    if (hasDeterministicReturn(ifStmt->thenBranch.get()) &&
+                        hasDeterministicReturn(ifStmt->elseBranch.get())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        // Check last statement
+        return hasDeterministicReturn(block->statements.back().get());
+    }
+    
+    // Return statement: obviously returns
+    if (dynamic_cast<ReturnStatement*>(body)) {
+        return true;
+    }
+    
+    // If-else where both branches return
+    if (auto* ifStmt = dynamic_cast<IfStatement*>(body)) {
+        if (ifStmt->elseBranch) {
+            return hasDeterministicReturn(ifStmt->thenBranch.get()) &&
+                   hasDeterministicReturn(ifStmt->elseBranch.get());
+        }
+        return false; // No else = not deterministic
+    }
+    
+    return false;
+}
+
+void TypeChecker::checkNoDynamicFeatures(ASTNode* node) {
+    if (!node) return;
+    
+    // Check for Unknown/Any types in variable declarations
+    if (auto* vd = dynamic_cast<VariableDeclaration*>(node)) {
+        if (vd->typeInfo.inferredType.kind == TypeKind::Unknown) {
+            addError(vd->sourceLine,
+                "AOT mode requires explicit types: variable '" + vd->varName + "' has unknown type",
+                "Add a type rune like :whole, :phrase, or :truth");
+        }
+        return;
+    }
+    
+    // Check for dynamic spell calls (native/spirit calls that aren't known)
+    if (auto* native = dynamic_cast<NativeInvocation*>(node)) {
+        // Native calls are allowed but must have known types
+        // This is okay - they're the escape hatch
+        (void)native; // suppress unused warning
+        return;
+    }
+    
+    // Recurse into blocks
+    if (auto* block = dynamic_cast<BlockStatement*>(node)) {
+        for (const auto& stmt : block->statements) {
+            checkNoDynamicFeatures(stmt.get());
+        }
+    }
+}
+
+void TypeChecker::rejectAmbiguousConversion(const Type& from, const Type& to, int line) {
+    if (mode_ != CompilationMode::AOT) return;
+    
+    // In AOT mode, reject conversions that require runtime type checks
+    if (from.kind == TypeKind::Unknown || to.kind == TypeKind::Unknown) {
+        addError(line,
+            "AOT mode: ambiguous type conversion from " + typeToString(from) + 
+            " to " + typeToString(to),
+            "Provide explicit type annotations to resolve ambiguity");
+    }
+}
+
+bool TypeChecker::isPureSpell(SpellStatement* spell) {
+    if (!spell || !spell->body) return true;
+    
+    // Check body for impure operations
+    // A spell is impure if it contains:
+    // - Print statements
+    // - File I/O
+    // - Native calls (most of them)
+    // - Global variable mutation
+    
+    std::function<bool(ASTNode*)> checkPurity = [&](ASTNode* node) -> bool {
+        if (!node) return true;
+        
+        // Print is impure
+        if (dynamic_cast<PrintStatement*>(node)) return false;
+        
+        // Stream operations are impure
+        if (dynamic_cast<ScribeDeclaration*>(node)) return false;
+        if (dynamic_cast<StreamWriteStatement*>(node)) return false;
+        if (dynamic_cast<StreamCloseStatement*>(node)) return false;
+        if (dynamic_cast<StreamReadLoop*>(node)) return false;
+        if (dynamic_cast<StreamReadAllStatement*>(node)) return false;
+        
+        // Native calls are usually impure (conservative)
+        if (dynamic_cast<NativeInvocation*>(node)) return false;
+        
+        // Recursively check blocks
+        if (auto* block = dynamic_cast<BlockStatement*>(node)) {
+            for (const auto& stmt : block->statements) {
+                if (!checkPurity(stmt.get())) return false;
+            }
+        }
+        
+        // Check if branches
+        if (auto* ifStmt = dynamic_cast<IfStatement*>(node)) {
+            if (!checkPurity(ifStmt->thenBranch.get())) return false;
+            if (ifStmt->elseBranch && !checkPurity(ifStmt->elseBranch.get())) return false;
+        }
+        
+        // Check loops
+        if (auto* whileLoop = dynamic_cast<WhileLoop*>(node)) {
+            for (const auto& stmt : whileLoop->body) {
+                if (!checkPurity(stmt.get())) return false;
+            }
+        }
+        
+        return true;
+    };
+    
+    return checkPurity(spell->body.get());
 }
 
 } // namespace ardent

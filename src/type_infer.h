@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────
-// Ardent 2.2  ·  Type Inference Pass
+// Ardent 3.0  ·  Type Inference Pass
 // ─────────────────────────────────────────────────────────────────────────
 // Flow-sensitive type inference for Ardent programs. This pass annotates
 // AST nodes with inferred types without requiring explicit :rune annotations.
