@@ -23,6 +23,8 @@ private:
     std::shared_ptr<ASTNode> parseExpression();
     std::shared_ptr<ASTNode> parseOr();
     std::shared_ptr<ASTNode> parseAnd();
+    std::shared_ptr<ASTNode> parseAdditive();      // 3.3: arithmetic +/-
+    std::shared_ptr<ASTNode> parseMultiplicative(); // 3.3: arithmetic */%
     std::shared_ptr<ASTNode> parseUnary();
     std::shared_ptr<ASTNode> parseCast();
     std::shared_ptr<ASTNode> parseComparison();
@@ -61,6 +63,12 @@ private:
     std::shared_ptr<ASTNode> parseWhereExpr(std::shared_ptr<ASTNode> source);
     std::shared_ptr<ASTNode> parseTransformExpr(std::shared_ptr<ASTNode> source);
     std::shared_ptr<ASTNode> parseIndexAssign(std::shared_ptr<ASTNode> target, std::shared_ptr<ASTNode> index);
+    
+    // Block control flow (3.3 The Proper Flow)
+    std::shared_ptr<ASTNode> parseBlockIfStatement();
+    std::shared_ptr<ASTNode> parseVariableAssignment();
+    std::shared_ptr<BlockStatement> parseBlock();
+    std::shared_ptr<ASTNode> parseWhileStatement();  // New-style: Whilst condition: ... Done
     
 public:
     Parser(std::vector<Token> tokens);

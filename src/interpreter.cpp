@@ -2,7 +2,7 @@
 #include <iostream>
 #include "interpreter.h"
 
-bool gQuietAssign = false;
+bool gQuietAssign = true;
 #include "lexer.h"
 #include "parser.h"
 #include "types.h"
@@ -789,7 +789,8 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
             if (b->op.type == TokenType::AND || b->op.type == TokenType::OR ||
                 b->op.type == TokenType::SURPASSETH || b->op.type == TokenType::REMAINETH ||
                 b->op.type == TokenType::EQUAL || b->op.type == TokenType::NOT_EQUAL ||
-                b->op.type == TokenType::GREATER || b->op.type == TokenType::LESSER) {
+                b->op.type == TokenType::GREATER || b->op.type == TokenType::LESSER ||
+                b->op.type == TokenType::GREATER_EQUAL || b->op.type == TokenType::LESSER_EQUAL) {
                 int v = evaluateExpr(expr);
                 return v != 0;
             }
@@ -1026,6 +1027,10 @@ int Interpreter::evaluateExpr(std::shared_ptr<ASTNode> expr) {
             return (left > right) ? 1 : 0;
         } else if (binExpr->op.type == TokenType::LESSER) {
             return (left < right) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::GREATER_EQUAL) {
+            return (left >= right) ? 1 : 0;
+        } else if (binExpr->op.type == TokenType::LESSER_EQUAL) {
+            return (left <= right) ? 1 : 0;
         } else if (binExpr->op.type == TokenType::AND) {
             return (left != 0) && (right != 0) ? 1 : 0;
         } else if (binExpr->op.type == TokenType::OR) {
@@ -1125,7 +1130,7 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     }
     // Handle if-statements.
     else if (auto ifStmt = std::dynamic_pointer_cast<IfStatement>(ast)) {
-        std::cout << "Executing IF condition..." << std::endl;
+        // Debug: std::cout << "Executing IF condition..." << std::endl;
         int cond = evaluateExpr(ifStmt->condition);
         if (cond != 0) {
             enterScope();
@@ -1135,6 +1140,70 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             enterScope();
             execute(ifStmt->elseBranch);
             exitScope();
+        }
+    }
+    // Handle block if-statements (Ardent 3.3)
+    else if (auto blockIf = std::dynamic_pointer_cast<BlockIfStatement>(ast)) {
+        int cond = evaluateExpr(blockIf->condition);
+        if (cond != 0) {
+            enterScope();
+            execute(blockIf->thenBlock);
+            exitScope();
+        } else if (blockIf->elseBlock) {
+            enterScope();
+            execute(blockIf->elseBlock);
+            exitScope();
+        }
+    }
+    // Handle break statement: "Cease" (Ardent 3.3)
+    else if (std::dynamic_pointer_cast<BreakStmt>(ast)) {
+        throw BreakSignal{};
+    }
+    // Handle continue statement: "Continue" (Ardent 3.3)
+    else if (std::dynamic_pointer_cast<ContinueStmt>(ast)) {
+        throw ContinueSignal{};
+    }
+    // Handle new-style while loop: "Whilst condition: ... Done" (Ardent 3.3)
+    else if (auto whileStmt = std::dynamic_pointer_cast<WhileStatement>(ast)) {
+        while (true) {
+            int cond = evaluateExpr(whileStmt->condition);
+            if (cond == 0) break;  // Condition is false
+            
+            enterScope();
+            try {
+                for (const auto& stmt : whileStmt->body->statements) {
+                    execute(stmt);
+                }
+            } catch (const BreakSignal&) {
+                exitScope();
+                break;  // Exit the loop
+            } catch (const ContinueSignal&) {
+                // Just continue to next iteration
+            }
+            exitScope();
+        }
+    }
+    // Handle variable assignment: "Let X become Y" (Ardent 3.3)
+    else if (auto varAssign = std::dynamic_pointer_cast<VariableAssignment>(ast)) {
+        Value rhs = evaluateValue(varAssign->value);
+        // Find and update existing variable in any scope
+        int scopeIdx = findScopeIndex(varAssign->varName);
+        if (scopeIdx >= 0) {
+            scopes[static_cast<size_t>(scopeIdx)][varAssign->varName] = rhs;
+            // Also update in the env_ stack for consistency
+            env_.assign(varAssign->varName.c_str(), static_cast<std::uint32_t>(varAssign->varName.size()), rhs);
+            if (!gQuietAssign) {
+                std::cout << "Variable reassigned: " << varAssign->varName << " = ";
+                if (std::holds_alternative<int>(rhs)) std::cout << std::get<int>(rhs);
+                else if (std::holds_alternative<std::string>(rhs)) std::cout << std::get<std::string>(rhs);
+                else if (std::holds_alternative<bool>(rhs)) std::cout << (std::get<bool>(rhs) ? "True" : "False");
+                else std::cout << "[value]";
+                std::cout << std::endl;
+            }
+        } else {
+            // Variable doesn't exist - create it in current scope
+            assignVariableAny(varAssign->varName, rhs);
+            // Debug: std::cout << "Variable assigned: " << varAssign->varName << std::endl;
         }
     }
      // Handle while loop execution
@@ -1491,12 +1560,13 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
     else if (auto forEach = std::dynamic_pointer_cast<ForEachStmt>(ast)) {
         Value collVal = evaluateValue(forEach->collection);
         enterScope();
+        bool shouldBreak = false;
         
         if (forEach->hasTwoVars) {
             // Key, value iteration over Tome
             if (std::holds_alternative<Tome>(collVal)) {
                 const Tome& tm = std::get<Tome>(collVal);
-                for (size_t i = 0; i < tm.size; ++i) {
+                for (size_t i = 0; i < tm.size && !shouldBreak; ++i) {
                     declareVariable(forEach->iterVar, Value(tm.data[i].key));
                     // Convert SimpleValue to Value
                     const SimpleValue& sv = tm.data[i].value;
@@ -1505,11 +1575,15 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                     else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
                     else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
                     declareVariable(forEach->valueVar, val);
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(collVal)) {
                 const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(collVal);
                 for (const auto& kv : mp) {
+                    if (shouldBreak) break;
                     declareVariable(forEach->iterVar, Value(kv.first));
                     Value val;
                     const SimpleValue& sv = kv.second;
@@ -1517,7 +1591,10 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
                     else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
                     else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
                     declareVariable(forEach->valueVar, val);
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else {
                 printPoeticCurse("For each with two variables requires a tome.");
@@ -1526,37 +1603,51 @@ void Interpreter::execute(std::shared_ptr<ASTNode> ast) {
             // Single variable iteration over Order or Tome keys
             if (std::holds_alternative<Order>(collVal)) {
                 const Order& ord = std::get<Order>(collVal);
-                for (size_t i = 0; i < ord.size; ++i) {
+                for (size_t i = 0; i < ord.size && !shouldBreak; ++i) {
                     const SimpleValue& sv = ord.data[i];
                     Value val;
                     if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
                     else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
                     else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
                     declareVariable(forEach->iterVar, val);
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else if (std::holds_alternative<std::vector<SimpleValue>>(collVal)) {
                 const auto& vec = std::get<std::vector<SimpleValue>>(collVal);
                 for (const SimpleValue& sv : vec) {
+                    if (shouldBreak) break;
                     Value val;
                     if (std::holds_alternative<int>(sv)) val = std::get<int>(sv);
                     else if (std::holds_alternative<std::string>(sv)) val = std::get<std::string>(sv);
                     else if (std::holds_alternative<bool>(sv)) val = std::get<bool>(sv);
                     declareVariable(forEach->iterVar, val);
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else if (std::holds_alternative<Tome>(collVal)) {
                 // Keys only
                 const Tome& tm = std::get<Tome>(collVal);
-                for (size_t i = 0; i < tm.size; ++i) {
+                for (size_t i = 0; i < tm.size && !shouldBreak; ++i) {
                     declareVariable(forEach->iterVar, Value(tm.data[i].key));
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else if (std::holds_alternative<std::unordered_map<std::string, SimpleValue>>(collVal)) {
                 const auto& mp = std::get<std::unordered_map<std::string, SimpleValue>>(collVal);
                 for (const auto& kv : mp) {
+                    if (shouldBreak) break;
                     declareVariable(forEach->iterVar, Value(kv.first));
-                    try { execute(forEach->body); } catch (const ReturnSignal&) { throw; }
+                    try { execute(forEach->body); } 
+                    catch (const BreakSignal&) { shouldBreak = true; }
+                    catch (const ContinueSignal&) { /* continue to next iteration */ }
+                    catch (const ReturnSignal&) { throw; }
                 }
             } else {
                 printPoeticCurse("For each requires an order or tome.");
@@ -1814,7 +1905,8 @@ std::string Interpreter::evaluatePrintExpr(std::shared_ptr<ASTNode> expr) {
         if (binExpr->op.type == TokenType::AND || binExpr->op.type == TokenType::OR ||
             binExpr->op.type == TokenType::SURPASSETH || binExpr->op.type == TokenType::REMAINETH ||
             binExpr->op.type == TokenType::EQUAL || binExpr->op.type == TokenType::NOT_EQUAL ||
-            binExpr->op.type == TokenType::GREATER || binExpr->op.type == TokenType::LESSER) {
+            binExpr->op.type == TokenType::GREATER || binExpr->op.type == TokenType::LESSER ||
+            binExpr->op.type == TokenType::GREATER_EQUAL || binExpr->op.type == TokenType::LESSER_EQUAL) {
             int v = evaluateExpr(expr);
             return v != 0 ? std::string("True") : std::string("False");
         }

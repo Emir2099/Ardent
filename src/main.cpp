@@ -405,7 +405,7 @@ int main(int argc, char** argv) {
     bool emoji = true; // default to emoji prompt
     bool poetic = false; // default off
     bool chroniclesOnly = false; // run only the Chronicle Rites demo
-    bool quietAssign = false; // --quiet-assign suppress variable assignment logs
+    bool quietAssign = true; // default to quiet mode - use --verbose to enable debug logs
     bool noOptimize = false; // --no-optimize disable constant folding / purity analysis
     bool wantTypeCheck = false;    // --type-check run type checker and show errors
     bool wantDumpTypes = false;    // --dump-types show inferred types for all expressions
@@ -452,6 +452,7 @@ int main(int argc, char** argv) {
         else if (arg == "--poetic") poetic = true;
         else if (arg == "--chronicles-demo") chroniclesOnly = true;
         else if (arg == "--quiet-assign") quietAssign = true;
+        else if (arg == "--verbose" || arg == "-v") quietAssign = false;
     }
     if (printVersion) {
         initWindowsConsole(true);
@@ -494,7 +495,7 @@ int main(int argc, char** argv) {
         std::cout << "  --demo               Run a brief poetic showcase.\n";
         std::cout << "  --banner             Print logo + version only.\n";
         std::cout << "  --version            Display Ardent version and codename.\n";
-        std::cout << "  --quiet-assign       Suppress 'Variable assigned:' lines (test parity).\n";
+        std::cout << "  --verbose, -v        Enable debug output (variable assignments, etc.).\n";
         std::cout << "  --no-optimize        Disable constant folding / purity analysis.\n";
         std::cout << "\n  Type System (2.2):\n";
         std::cout << "  --type-check         Run type checker and display errors/warnings.\n";

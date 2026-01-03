@@ -48,6 +48,30 @@ bool Parser::isAtEnd() {
     return current >= tokens.size();
 }
 
+// Parse additive expressions: term (('+' | '-') term)*
+std::shared_ptr<ASTNode> Parser::parseAdditive() {
+    auto left = parseMultiplicative();
+    while (!isAtEnd() && peek().type == TokenType::OPERATOR && 
+           (peek().value == "+" || peek().value == "-")) {
+        Token op = advance();
+        auto right = parseMultiplicative();
+        left = node<BinaryExpression>(left, op, right);
+    }
+    return left;
+}
+
+// Parse multiplicative expressions: unary (('*' | '/' | '%') unary)*
+std::shared_ptr<ASTNode> Parser::parseMultiplicative() {
+    auto left = parseUnary();
+    while (!isAtEnd() && peek().type == TokenType::OPERATOR && 
+           (peek().value == "*" || peek().value == "/" || peek().value == "%")) {
+        Token op = advance();
+        auto right = parseUnary();
+        left = node<BinaryExpression>(left, op, right);
+    }
+    return left;
+}
+
 // Logical expression parsing with precedence: NOT > AND > OR
 std::shared_ptr<ASTNode> Parser::parseExpression() {
     auto left = parseOr();
@@ -96,16 +120,18 @@ std::shared_ptr<ASTNode> Parser::parseUnary() {
     return parsePrimary();
 }
 
-// Parse comparison expressions: handles SURPASSETH, REMAINETH, EQUAL, NOT_EQUAL, GREATER, LESSER, ABIDETH IN
+// Parse comparison expressions: handles SURPASSETH, REMAINETH, EQUAL, NOT_EQUAL, GREATER, LESSER, GREATER_EQUAL, LESSER_EQUAL, ABIDETH IN
+// Now uses parseAdditive to support arithmetic on both sides of comparison
 std::shared_ptr<ASTNode> Parser::parseComparison() {
-    auto left = parseUnary();
+    auto left = parseAdditive();  // Changed from parseUnary to support arithmetic
     while (!isAtEnd()) {
         TokenType t = peek().type;
         if (t == TokenType::SURPASSETH || t == TokenType::REMAINETH ||
             t == TokenType::EQUAL || t == TokenType::NOT_EQUAL ||
-            t == TokenType::GREATER || t == TokenType::LESSER) {
+            t == TokenType::GREATER || t == TokenType::LESSER ||
+            t == TokenType::GREATER_EQUAL || t == TokenType::LESSER_EQUAL) {
             Token op = advance();
-            auto right = parseUnary();
+            auto right = parseAdditive();  // Changed from parseUnary
             left = node<BinaryExpression>(left, op, right);
         } else if (t == TokenType::ABIDETH || 
                    (t == TokenType::IDENTIFIER && peek().value == "abideth")) {
@@ -140,7 +166,7 @@ std::shared_ptr<ASTNode> Parser::parseComparison() {
                 }
             }
             if (op.type != TokenType::INVALID) {
-                auto right = parseUnary();
+                auto right = parseAdditive();  // Changed from parseUnary
                 left = node<BinaryExpression>(left, op, right);
             } else {
                 // revert and stop if no comparison phrase recognized
@@ -381,6 +407,32 @@ std::shared_ptr<ASTNode> Parser::parseIfStatement() {
     }
     size_t save = current;
     auto condition = parseExpression();
+    
+    // Check for block-if (colon instead of THEN)
+    if (match(TokenType::COLON)) {
+        // This is a block-if statement
+        auto thenBlock = parseBlock();
+        
+        // Consume block terminator (DONE only - CEASE is a break statement, not terminator)
+        if (peek().type == TokenType::DONE) {
+            advance();
+        }
+        
+        // Check for Otherwise
+        std::shared_ptr<BlockStatement> elseBlock = nullptr;
+        if (match(TokenType::OTHERWISE)) {
+            // Optionally consume colon after Otherwise
+            match(TokenType::COLON);
+            elseBlock = parseBlock();
+            // Consume block terminator after else block (DONE only)
+            if (peek().type == TokenType::DONE) {
+                advance();
+            }
+        }
+        
+        return node<BlockIfStatement>(condition, thenBlock, elseBlock);
+    }
+    
     if (!match(TokenType::THEN)) {
         // fallback to numeric simple condition
         current = save;
@@ -390,11 +442,15 @@ std::shared_ptr<ASTNode> Parser::parseIfStatement() {
             return nullptr;
         }
     }
-    // For the then-branch: if the next token is LET_PROCLAIMED, treat it as a print statement.
+    // For the then-branch: handle print statements, break/continue, or expressions
     std::shared_ptr<ASTNode> thenBranch;
     if (match(TokenType::LET_PROCLAIMED)) {
         auto expr = parseExpression();
-    thenBranch = node<PrintStatement>(expr);
+        thenBranch = node<PrintStatement>(expr);
+    } else if (match(TokenType::CEASE)) {
+        thenBranch = node<BreakStmt>();
+    } else if (match(TokenType::CONTINUE)) {
+        thenBranch = node<ContinueStmt>();
     } else {
         thenBranch = parseExpression();
     }
@@ -403,6 +459,10 @@ std::shared_ptr<ASTNode> Parser::parseIfStatement() {
         if (match(TokenType::WHISPER)) {
             auto expr = parseExpression();
             elseBranch = node<PrintStatement>(expr);
+        } else if (match(TokenType::CEASE)) {
+            elseBranch = node<BreakStmt>();
+        } else if (match(TokenType::CONTINUE)) {
+            elseBranch = node<ContinueStmt>();
         } else {
             elseBranch = parseExpression();
         }
@@ -580,7 +640,7 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
 
     // Parse loop body
     std::vector<std::shared_ptr<ASTNode>> body;
-    while (!isAtEnd() && peek().value != "let") {
+    while (!isAtEnd() && peek().type != TokenType::LET && peek().value != "let") {
         // Skip filler tokens
         if (peek().value == "And" || peek().value == "with" || peek().value == "each" || peek().value == "dawn") {
             advance();
@@ -596,8 +656,12 @@ std::shared_ptr<ASTNode> Parser::parseWhileLoop() {
         }
     }
 
-    // Parse increment clause
-    consume(TokenType::IDENTIFIER, "Expected 'let'"); // Consume 'let'
+    // Parse increment clause - handle both LET token and lowercase 'let' identifier
+    if (peek().type == TokenType::LET) {
+        advance(); // consume LET token
+    } else {
+        consume(TokenType::IDENTIFIER, "Expected 'let'"); // Consume lowercase 'let'
+    }
     Token incVar = consume(TokenType::IDENTIFIER, "Expected loop variable in increment clause");
     if (incVar.value != loopVarToken.value) {
         std::cerr << "Error: Loop variable mismatch in increment clause" << std::endl;
@@ -641,7 +705,7 @@ if (comparisonOpToken.type != TokenType::SURPASSETH &&
 
     // Now parse the loop body, skipping filler tokens such as "And", "with", "each", "dawn", and commas.
     std::vector<std::shared_ptr<ASTNode>> body;
-    while (!isAtEnd() && peek().value != "let") {
+    while (!isAtEnd() && peek().type != TokenType::LET && peek().value != "let") {
         Token next = peek();
         if (next.value == "And" || next.value == "with" || next.value == "each" || 
             next.value == "dawn" || next.value == ",") {
@@ -660,10 +724,15 @@ if (comparisonOpToken.type != TokenType::SURPASSETH &&
 
     // Parse the increment clause.
     // It should be in the form: "let <var> ascend <step>" or "let <var> descend <step>"
-    Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' at the start of increment clause");
-    if (letToken.value != "let") {
-        std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
-        return nullptr;
+    // Handle both LET token and lowercase 'let' identifier
+    if (peek().type == TokenType::LET) {
+        advance(); // consume LET token
+    } else {
+        Token letToken = consume(TokenType::IDENTIFIER, "Expected 'let' at the start of increment clause");
+        if (letToken.value != "let") {
+            std::cerr << "Error: Expected 'let' but got '" << letToken.value << "'" << std::endl;
+            return nullptr;
+        }
     }
     Token incVar = consume(TokenType::IDENTIFIER, "Expected loop variable in increment clause");
     if (incVar.value != loopVarToken.value) {
@@ -787,8 +856,22 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (match(TokenType::UNFURL_SCROLL)) {
         return parseUnfurl();
     } else if (match(TokenType::LET)) {
-        // Peek ahead for collection rites: 'the order' / 'the tome' <name> verb ...
+        // Check for "Let X become Y" variable assignment first (3.3)
         size_t save = current;
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+            Token varTok = advance();
+            if (!isAtEnd() && peek().type == TokenType::BECOME) {
+                advance(); // consume BECOME
+                auto value = parseExpression();
+                if (value) {
+                    return node<VariableAssignment>(varTok.value, value);
+                }
+            }
+            // Not an assignment, revert
+            current = save;
+        }
+        
+        // Peek ahead for collection rites: 'the order' / 'the tome' <name> verb ...
         // Accept optional 'the'
         if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && (peek().value == "the")) {
             advance();
@@ -839,7 +922,14 @@ std::shared_ptr<ASTNode> Parser::parseStatement() {
     } else if (match(TokenType::SPELL_NAMED)) {
         return parseFunctionCall();
     } else if (match(TokenType::WHILST)) {
-        return parseWhileLoop();
+        // New-style while: "Whilst condition: ... Done"
+        return parseWhileStatement();
+    } else if (match(TokenType::CEASE)) {
+        // Break statement
+        return node<BreakStmt>();
+    } else if (match(TokenType::CONTINUE)) {
+        // Continue statement
+        return node<ContinueStmt>();
     } else if (match(TokenType::FOR)) {
         // Check if this is "For each" (for-each loop) or classic "For X surpasseth" (for loop)
         if (!isAtEnd() && (peek().type == TokenType::EACH || 
@@ -1605,4 +1695,171 @@ std::shared_ptr<ASTNode> Parser::parseIndexAssign(std::shared_ptr<ASTNode> targe
     }
     
     return node<IndexAssignStmt>(target, index, value);
+}
+
+// ===== Block Control Flow (Ardent 3.3 - The Proper Flow) =====
+
+// Parse a block of statements until we hit Otherwise, Done, or end-of-block markers
+// Note: CEASE is NOT a block terminator here - it's a break statement that gets parsed
+std::shared_ptr<BlockStatement> Parser::parseBlock() {
+    std::vector<std::shared_ptr<ASTNode>> statements;
+    
+    while (!isAtEnd()) {
+        Token next = peek();
+        
+        // End block on OTHERWISE, DONE, END, or end-of-block markers
+        // CEASE is NOT included - it's a break statement, not a block terminator for if-blocks
+        if (next.type == TokenType::OTHERWISE || 
+            next.type == TokenType::DONE ||
+            next.type == TokenType::END) {
+            break;
+        }
+        
+        // Skip newlines and empty lines (represented as certain tokens)
+        if (next.type == TokenType::COMMA && next.value == ",") {
+            advance();
+            continue;
+        }
+        
+        auto stmt = parseStatement();
+        if (stmt) {
+            statements.push_back(stmt);
+        } else {
+            // If we can't parse a statement, break to avoid infinite loop
+            break;
+        }
+    }
+    
+    return node<BlockStatement>(statements);
+}
+
+// Parse "Let X become Y" - variable reassignment
+std::shared_ptr<ASTNode> Parser::parseVariableAssignment() {
+    // LET already consumed, peek for variable name
+    Token varTok = consume(TokenType::IDENTIFIER, "Expected variable name after 'Let'");
+    std::string varName = varTok.value;
+    
+    // Expect "become"
+    if (!match(TokenType::BECOME)) {
+        std::cerr << "Error: Expected 'become' after variable name in assignment" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the value expression
+    auto value = parseExpression();
+    if (!value) {
+        std::cerr << "Error: Expected expression after 'become'" << std::endl;
+        return nullptr;
+    }
+    
+    return node<VariableAssignment>(varName, value);
+}
+
+// Parse block if statement: "Should the fates decree X: ... Otherwise: ..."
+std::shared_ptr<ASTNode> Parser::parseBlockIfStatement() {
+    // SHOULD already consumed
+    
+    // Skip filler words: "the", "fates", "decree", "that"
+    while (!isAtEnd() && 
+           (peek().type == TokenType::FATES ||
+            peek().type == TokenType::DECREE ||
+            (peek().type == TokenType::IDENTIFIER && 
+             (peek().value == "the" || peek().value == "that")))) {
+        advance();
+    }
+    
+    // Parse condition
+    auto condition = parseExpression();
+    if (!condition) {
+        std::cerr << "Error: Expected condition in block if statement" << std::endl;
+        return nullptr;
+    }
+    
+    // Expect colon after condition
+    if (!match(TokenType::COLON)) {
+        // No colon means it's a single-line if, fall back to parseIfStatement behavior
+        // For now, we require colon for block if
+        std::cerr << "Error: Expected ':' after condition for block if" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse then block
+    auto thenBlock = parseBlock();
+    
+    // Consume block terminator (DONE only - CEASE is break statement, not terminator)
+    if (peek().type == TokenType::DONE) {
+        advance();
+    }
+    
+    // Check for Otherwise
+    std::shared_ptr<BlockStatement> elseBlock = nullptr;
+    if (match(TokenType::OTHERWISE)) {
+        // Optionally consume colon after Otherwise
+        match(TokenType::COLON);
+        elseBlock = parseBlock();
+        // Consume block terminator after else block (DONE only)
+        if (peek().type == TokenType::DONE) {
+            advance();
+        }
+    }
+    
+    return node<BlockIfStatement>(condition, thenBlock, elseBlock);
+}
+
+// Parse new-style while statement: "Whilst condition: ... Done"
+// No implicit counter, condition-based, real block body
+std::shared_ptr<ASTNode> Parser::parseWhileStatement() {
+    // WHILST already consumed
+    
+    // Skip optional "the sun doth rise" filler if present
+    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "the") {
+        size_t save = current;
+        advance(); // "the"
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "sun") {
+            advance(); // "sun"
+            if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "doth") {
+                advance(); // "doth"
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "rise") {
+                    advance(); // "rise"
+                    // Consumed "the sun doth rise" filler
+                }
+            }
+        } else {
+            current = save; // Not the filler pattern, restore
+        }
+    }
+    
+    // Parse the condition expression
+    auto condition = parseExpression();
+    if (!condition) {
+        std::cerr << "Error: Expected condition after 'Whilst'" << std::endl;
+        return nullptr;
+    }
+    
+    // Expect colon OR SPOKEN token after condition (support both old and new style)
+    if (!match(TokenType::COLON) && !match(TokenType::SPOKEN)) {
+        std::cerr << "Error: Expected ':' or 'so shall these words be spoken' after while condition" << std::endl;
+        return nullptr;
+    }
+    
+    // Parse the body as a block until DONE or CEASE (for backward compatibility)
+    std::vector<std::shared_ptr<ASTNode>> statements;
+    while (!isAtEnd() && peek().type != TokenType::DONE && peek().type != TokenType::CEASE) {
+        auto stmt = parseStatement();
+        if (stmt) {
+            statements.push_back(stmt);
+        } else {
+            // Skip problematic token to avoid infinite loop
+            if (!isAtEnd()) advance();
+        }
+    }
+    
+    // Consume DONE or CEASE
+    if (!match(TokenType::DONE) && !match(TokenType::CEASE)) {
+        std::cerr << "Error: Expected 'Done' or 'Cease' to close while loop" << std::endl;
+        return nullptr;
+    }
+    
+    auto body = node<BlockStatement>(statements);
+    return node<WhileStatement>(condition, body);
 }

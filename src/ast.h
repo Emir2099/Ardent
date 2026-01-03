@@ -438,6 +438,52 @@ public:
     IndexAssignStmt(std::shared_ptr<ASTNode> tgt, std::shared_ptr<ASTNode> idx, std::shared_ptr<ASTNode> val)
         : target(std::move(tgt)), index(std::move(idx)), value(std::move(val)) {}
 };
+
+// Variable reassignment: "Let X become Y" (Ardent 3.3)
+class VariableAssignment : public ASTNode {
+public:
+    std::string varName;
+    std::shared_ptr<ASTNode> value;
+    
+    VariableAssignment(std::string name, std::shared_ptr<ASTNode> val)
+        : varName(std::move(name)), value(std::move(val)) {}
+};
+
+// Block if statement: "Should the fates decree X: ... Otherwise: ..." (Ardent 3.3)
+class BlockIfStatement : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> condition;
+    std::shared_ptr<BlockStatement> thenBlock;
+    std::shared_ptr<BlockStatement> elseBlock;  // nullptr if no Otherwise
+    
+    BlockIfStatement(std::shared_ptr<ASTNode> cond, 
+                     std::shared_ptr<BlockStatement> thenBlk,
+                     std::shared_ptr<BlockStatement> elseBlk = nullptr)
+        : condition(std::move(cond)), thenBlock(std::move(thenBlk)), elseBlock(std::move(elseBlk)) {}
+};
+
+// Break statement: "Cease" (Ardent 3.3)
+class BreakStmt : public ASTNode {
+public:
+    BreakStmt() = default;
+};
+
+// Continue statement: "Continue" (Ardent 3.3)
+class ContinueStmt : public ASTNode {
+public:
+    ContinueStmt() = default;
+};
+
+// New-style while loop: "Whilst condition: ... Done" (Ardent 3.3)
+// Condition-based, no implicit counter, real block body
+class WhileStatement : public ASTNode {
+public:
+    std::shared_ptr<ASTNode> condition;
+    std::shared_ptr<BlockStatement> body;
+    
+    WhileStatement(std::shared_ptr<ASTNode> cond, std::shared_ptr<BlockStatement> bodyBlock)
+        : condition(std::move(cond)), body(std::move(bodyBlock)) {}
+};
     
     
 

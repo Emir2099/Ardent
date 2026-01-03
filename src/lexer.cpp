@@ -199,6 +199,12 @@ Token Lexer::parseIdentifier() {
     if (identifier == "where") return Token(TokenType::WHERE, identifier);
     if (identifier == "transformed") return Token(TokenType::TRANSFORMED, identifier);
     if (identifier == "be") return Token(TokenType::BE, identifier);
+    
+    // 3.3 Loop control flow keywords
+    if (identifier == "Done") return Token(TokenType::DONE, identifier);
+    if (identifier == "Cease") return Token(TokenType::CEASE, identifier);
+    if (identifier == "Continue") return Token(TokenType::CONTINUE, identifier);
+    if (identifier == "Whilst") return Token(TokenType::WHILST, identifier);
 
     
     return Token(TokenType::IDENTIFIER, identifier);
@@ -521,6 +527,16 @@ std::vector<Token> Lexer::tokenize() {
                 currentChar = input[currentPos];
             else
                 currentChar = '\0';
+        }
+        // New short form: just "Whilst" for condition-based loops (Ardent 3.3)
+        else if (input.substr(currentPos, 6) == "Whilst" && 
+                 (currentPos + 6 >= input.length() || !(isAlpha(input[currentPos + 6]) || isDigit(input[currentPos + 6])))) {
+            tokens.push_back(Token(TokenType::WHILST, "Whilst"));
+            currentPos += 6;
+            if (currentPos < input.length())
+                currentChar = input[currentPos];
+            else
+                currentChar = '\0';
         } 
         else if (input.substr(currentPos, 15) == "remaineth below") {
             tokens.push_back(Token(TokenType::REMAINETH, "remaineth below"));
@@ -557,6 +573,46 @@ std::vector<Token> Lexer::tokenize() {
         else if (input.substr(currentPos, 5) == "Until") {
             tokens.push_back(Token(TokenType::UNTIL, "Until"));
             currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        // Block control flow (Ardent 3.3)
+        else if (input.substr(currentPos, 10) == "Otherwise:") {
+            tokens.push_back(Token(TokenType::OTHERWISE, "Otherwise"));
+            currentPos += 10;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 9) == "Otherwise") {
+            tokens.push_back(Token(TokenType::OTHERWISE, "Otherwise"));
+            currentPos += 9;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 10) == "Let become" || input.substr(currentPos, 6) == "become") {
+            // "Let X become Y" reassignment - just match "become" keyword
+            if (input.substr(currentPos, 6) == "become") {
+                tokens.push_back(Token(TokenType::BECOME, "become"));
+                currentPos += 6;
+                if (currentPos < input.length()) currentChar = input[currentPos];
+                else currentChar = '\0';
+            }
+        }
+        else if (input.substr(currentPos, 5) == "Cease") {
+            tokens.push_back(Token(TokenType::CEASE, "Cease"));
+            currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 4) == "Done") {
+            tokens.push_back(Token(TokenType::DONE, "Done"));
+            currentPos += 4;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 8) == "Continue") {
+            tokens.push_back(Token(TokenType::CONTINUE, "Continue"));
+            currentPos += 8;
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         }
@@ -625,12 +681,22 @@ else if (isDigit(currentChar) || (currentChar == '-' && isDigit(peekNextChar()))
             advance();
         }
         else if (currentChar == '>') {
-            tokens.push_back(Token(TokenType::GREATER, ">"));
             advance();
+            if (currentPos < input.size() && input[currentPos] == '=') {
+                tokens.push_back(Token(TokenType::GREATER_EQUAL, ">="));
+                advance();
+            } else {
+                tokens.push_back(Token(TokenType::GREATER, ">"));
+            }
         }
         else if (currentChar == '<') {
-            tokens.push_back(Token(TokenType::LESSER, "<"));
             advance();
+            if (currentPos < input.size() && input[currentPos] == '=') {
+                tokens.push_back(Token(TokenType::LESSER_EQUAL, "<="));
+                advance();
+            } else {
+                tokens.push_back(Token(TokenType::LESSER, "<"));
+            }
         }
         else if (isAlpha(currentChar)) {
             // If inside an object and expecting a key, convert bare identifier to STRING

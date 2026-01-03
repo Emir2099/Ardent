@@ -1,6 +1,6 @@
 # Ardent AOT Compilation Guide
 
-**Version:** Ardent 3.2  
+**Version:** Ardent 3.3  
 **Status:** Production-Ready
 
 This guide covers ahead-of-time (AOT) compilation of Ardent programs to native executables.

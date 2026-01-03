@@ -110,26 +110,56 @@ Let it be known throughout the land, a phrase named shout is of cast result as p
 
 ## ⚖️ Conditionals
 
+**Inline If**
+
 ```ardent
-Should the fates decree count surpasseth 5 then
-    Let it be proclaimed: "High!"
-Else whisper "Low!"
+Should the fates decree count > 5 then Let it be proclaimed "High!"
 ```
 
-Logical expressions:
+**Block If (3.3+)**
+
+```ardent
+Should the fates decree count >= 5:
+    Let it be proclaimed "High!"
+    Let it be proclaimed "Really high!"
+Done
+```
+
+**Logical expressions:**
 
 ```ardent
 Should the fates decree brave and not weary then
     Let it be proclaimed: "Strong!"
 ```
 
-Comparisons: `is equal to`, `is not`, `is greater than`, `is lesser than`, `surpasseth`, `remaineth below`
+**Comparisons:** `is equal to`, `is not`, `is greater than`, `is lesser than`, `>=`, `<=`, `>`, `<`, `surpasseth`, `remaineth below`
 
 ---
 
 ## 🔁 Loops
 
-Whilst Loop
+**Whilst Loop (3.3+)**
+
+```ardent
+Let it be known throughout the land, a number named i is of 0 winters
+Whilst i < 5:
+    Let it be proclaimed i
+    Let i become i + 1
+Done
+```
+
+**Break/Continue (3.3+)**
+
+```ardent
+Let it be known throughout the land, a number named i is of 0 winters
+Whilst i < 100:
+    Let it be proclaimed i
+    Let i become i + 1
+    Should the fates decree i is equal to 5 then Cease    Note: exits loop when i reaches 5
+Done
+```
+
+**Legacy Whilst Loop**
 
 ```ardent
 Let it be known throughout the land, a number named count is of 1 winters.
@@ -138,7 +168,7 @@ Whilst the sun doth rise count remaineth below 3 so shall these words be spoken
     And with each dawn, let count ascend 1
 ```
 
-For Loop
+**For Loop**
 
 ```ardent
 Let it be known throughout the land, a number named i is of 0 winters.
@@ -155,6 +185,58 @@ Do as the fates decree so shall these words be spoken
     Let it be proclaimed: "Count is " + ct
     And with each dawn, let ct ascend 1
 Until ct surpasseth 3
+```
+
+---
+
+## 🔢 Algorithms (3.3+)
+
+Ardent 3.3 enables real algorithm implementation with proper control flow.
+
+**Bubble Sort** (Standard implementation matching C/Python/Java):
+
+```ardent
+Note: Bubble Sort - O(n²) time, O(1) space
+Let it be known throughout the land, an order named arr is of [64, 34, 25, 12, 22, 11, 90] scrolls
+Let it be known throughout the land, a number named n is of 7 winters
+Let it be known throughout the land, a number named i is of 0 winters
+Let it be known throughout the land, a number named j is of 0 winters
+Let it be known throughout the land, a number named temp is of 0 winters
+
+Whilst i < n - 1:
+    Let j become 0
+    Whilst j < n - i - 1:
+        Should the fates decree arr[j] > arr[j + 1]:
+            Let temp become arr[j]
+            arr[j] be arr[j + 1]
+            arr[j + 1] be temp
+        Done
+        Let j become j + 1
+    Done
+    Let i become i + 1
+Done
+
+Let it be proclaimed arr
+Note: Output: [ 11, 12, 22, 25, 34, 64, 90 ]
+```
+
+**Fibonacci Sequence:**
+
+```ardent
+Let it be known throughout the land, a number named a is of 0 winters
+Let it be known throughout the land, a number named b is of 1 winters
+Let it be known throughout the land, a number named temp is of 0 winters
+Let it be known throughout the land, a number named i is of 0 winters
+
+Let it be proclaimed a
+Whilst i < 12:
+    Let it be proclaimed b
+    Let temp become b
+    Let b become a + b
+    Let a become temp
+    Let i become i + 1
+Done
+Note: Output: 0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144
 ```
 
 ---
@@ -260,7 +342,6 @@ Speak thy words (or say 'farewell' to depart).
 ✒️  3 + 2
 5
 ✒️  Let it be known, a number named age is of 18 winters.
-Variable assigned: age = 18
 ✒️  age + 3
 21
 ✒️  farewell
@@ -270,6 +351,7 @@ The Oracle falls silent...
 Notes:
 - `_` holds the last result in the REPL.
 - Flags: `--color/--no-color`, `--emoji/--no-emoji`, `--poetic` for reflective lines.
+- Use `--verbose` to see debug output (variable assignments, etc.).
 
 ---
 
@@ -397,6 +479,7 @@ When the poet’s craft becomes a scholar’s tool.
 - `--lint` warns on simple style/structure issues.
 - `--pretty` formats scrolls to a canonical layout (stub).
 - `--no-optimize` disables the 2.1 optimizer (constant folding / purity analysis / partial evaluation).
+- `--verbose` / `-v` enables debug output (variable assignments, etc.).
 - `--banner` prints a clean banner (screenshot-friendly).
 - `--scrolls` lists available stdlib scrolls.
 
@@ -854,6 +937,59 @@ By decree of the elders, a spell named bless is cast upon a warrior known as nam
 | **Benchmark Suite** | `--bench`, `--bench --vm`, `--bench --all` |
 | **Hybrid Mode** | `--hybrid` for automatic backend selection |
 | **PowerShell Runner** | `benchmarks/run_benchmarks.ps1` |
+
+---
+
+## 🌊 Ardent 3.3 — The Proper Flow
+
+> "The proper flow brings proper growth."
+
+Ardent 3.3 introduces **proper loop control flow** that enables implementation of real algorithms like bubble sort, binary search, and Fibonacci sequences.
+
+### What's New
+
+| Feature | Description |
+|---------|-------------|
+| **Whilst Loops** | `Whilst condition: ... Done` - clean condition-based loops |
+| **Block If** | `Should the fates decree X: ... Done` - multi-line conditionals |
+| **Break Statement** | `Cease` - exit a loop early |
+| **Continue Statement** | `Continue` - skip to next iteration |
+| **Comparison Operators** | `>=`, `<=`, `>`, `<` - symbolic comparisons |
+| **Clean Output** | Debug messages silent by default, use `--verbose` to enable |
+
+### Bubble Sort Example
+
+```ardent
+Let it be known throughout the land, an order named arr is of [64, 34, 25, 12, 22, 11, 90] scrolls
+Let it be known throughout the land, a number named n is of 7 winters
+Let it be known throughout the land, a number named i is of 0 winters
+Let it be known throughout the land, a number named j is of 0 winters
+Let it be known throughout the land, a number named temp is of 0 winters
+
+Whilst i < n - 1:
+    Let j become 0
+    Whilst j < n - i - 1:
+        Should the fates decree arr[j] > arr[j + 1]:
+            Let temp become arr[j]
+            arr[j] be arr[j + 1]
+            arr[j + 1] be temp
+        Done
+        Let j become j + 1
+    Done
+    Let i become i + 1
+Done
+
+Let it be proclaimed arr
+Note: Output: [ 11, 12, 22, 25, 34, 64, 90 ]
+```
+
+### CLI Changes
+
+| Flag | Description |
+|------|-------------|
+| `--verbose` / `-v` | Enable debug output (variable assignments, etc.) |
+
+Debug output is now **silent by default** for clean algorithm execution.
 
 ---
 

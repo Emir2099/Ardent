@@ -9,7 +9,7 @@ enum class TokenType {
     NAMED, IS_OF, SHOULD, FATES, DECREE, SURPASSETH, 
     THEN, WHISPER, DECREE_ELDERS, SPELL_NAMED, CAST_UPON, SPELL_DEF, SPELL_CAST, SPELL_CALL, UPON, KNOWN_AS,
     COMPARISON_OP, ELSE, LET_PROCLAIMED, INVALID, END, WHILST, REMAINETH, SPOKEN, ASCEND,DESCEND,AND_WITH_EACH_DAWN,
-    FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, CAST, AS,
+    FOR, DO_FATES, UNTIL, BOOLEAN, AND, OR, NOT, EQUAL, NOT_EQUAL, GREATER, LESSER, GREATER_EQUAL, LESSER_EQUAL, CAST, AS,
     LBRACKET, RBRACKET, LBRACE, RBRACE, COMMA, COLON, DOT,
     EXPAND, AMEND, REMOVE, ERASE,
     RETURN,
@@ -22,7 +22,9 @@ enum class TokenType {
     // Collection iteration & operations (Ardent 3.1)
     EACH, ABIDETH, IN, WHERE, TRANSFORMED, BE,
     // Comments (Ardent 3.2)
-    COMMENT, DOC_COMMENT
+    COMMENT, DOC_COMMENT,
+    // Block control flow (Ardent 3.3)
+    OTHERWISE, BECOME, CEASE, DONE, CONTINUE
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -63,6 +65,8 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::NOT_EQUAL: return "NOT_EQUAL";
         case TokenType::GREATER: return "GREATER";
         case TokenType::LESSER: return "LESSER";
+        case TokenType::GREATER_EQUAL: return "GREATER_EQUAL";
+        case TokenType::LESSER_EQUAL: return "LESSER_EQUAL";
         case TokenType::CAST: return "CAST";
         case TokenType::AS: return "AS";
         case TokenType::LBRACKET: return "LBRACKET";
@@ -113,6 +117,12 @@ inline std::string tokenTypeToString(TokenType type) {
         // Comments (3.2)
         case TokenType::COMMENT: return "COMMENT";
         case TokenType::DOC_COMMENT: return "DOC_COMMENT";
+        // Block control flow (3.3)
+        case TokenType::OTHERWISE: return "OTHERWISE";
+        case TokenType::BECOME: return "BECOME";
+        case TokenType::CEASE: return "CEASE";
+        case TokenType::DONE: return "DONE";
+        case TokenType::CONTINUE: return "CONTINUE";
         default: return "UNKNOWN";
     }
 }

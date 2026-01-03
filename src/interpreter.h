@@ -80,6 +80,8 @@ private:
     // Stored spells: name -> (param list, body)
     std::unordered_map<std::string, SpellDef> spells;
     struct ReturnSignal { Value value; };
+    struct BreakSignal {};      // Cease - exit loop
+    struct ContinueSignal {};   // Continue - next iteration
     bool runtimeError = false; // flag to suppress output on runtime errors (e.g., bounds)
     bool inTryContext = false; // when true, allow curses to bubble to enclosing try/catch
     // Error context & call stack

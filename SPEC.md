@@ -1,8 +1,8 @@
-# Ardent 3.2 Language Specification
+# Ardent 3.3 Language Specification
 
 **Status:** FROZEN  
-**Version:** 3.2.1  
-**Date:** 2026-01-02  
+**Version:** 3.3.0  
+**Date:** 2026-01-03  
 
 > *"Where code becomes poetry, and logic sings in verse."*
 
@@ -86,8 +86,14 @@ The following are reserved and cannot be used as identifiers:
 | `/` | Division (truncated) | 5 |
 | `%` | Modulo | 5 |
 | `=` | Equality | 2 |
-| `surpasseth` | Greater than | 3 |
-| `remaineth beneath` | Less than | 3 |
+| `>=` | Greater than or equal | 3 |
+| `<=` | Less than or equal | 3 |
+| `>` | Greater than | 3 |
+| `<` | Less than | 3 |
+| `surpasseth` | Greater than (prose) | 3 |
+| `remaineth beneath` | Less than (prose) | 3 |
+| `is greater than` | Greater than (prose) | 3 |
+| `is less than` | Less than (prose) | 3 |
 | `and` | Logical AND | 1 |
 | `or` | Logical OR | 0 |
 | `not` | Logical NOT | 6 (unary) |
@@ -257,9 +263,18 @@ Let it be known, a tome named hero is of {"name": "Aragorn", "title": "King"}.
 ### 4.2 Comparison Expressions
 
 ```ardent
-<a> surpasseth <b>        — a > b
-<a> remaineth beneath <b> — a < b
+<a> surpasseth <b>        — a > b (prose)
+<a> remaineth beneath <b> — a < b (prose)
 <a> equals <b>            — a == b
+<a> is greater than <b>   — a > b (prose)
+<a> is less than <b>      — a < b (prose)
+<a> is equal to <b>       — a == b
+
+Note: Symbolic operators also available (3.3+)
+<a> >= <b>                — greater or equal
+<a> <= <b>                — less or equal
+<a> > <b>                 — greater than
+<a> < <b>                 — less than
 ```
 
 ### 4.3 Boolean Expressions
@@ -284,10 +299,16 @@ When either operand is a phrase, `+` performs concatenation with spacing:
 
 ### 5.1 Conditionals
 
-**If-Then:**
+**Inline If-Then:**
+```ardent
+Should the fates decree <condition> then <statement>
+```
+
+**Block If (3.3+):**
 ```ardent
 Should the fates decree <condition>:
     <body>
+Done
 ```
 
 **If-Then-Else:**
@@ -300,11 +321,28 @@ Otherwise:
 
 ### 5.2 Loops
 
-**While Loop:**
+**Whilst Loop (3.3+):**
+```ardent
+Whilst <condition>:
+    <body>
+Done
+```
+
+**Legacy While Loop:**
 ```ardent
 Whilst the sun doth rise and <condition>:
     <body>
 Done
+```
+
+**Break Statement (3.3+):**
+```ardent
+Cease   — exits the innermost loop
+```
+
+**Continue Statement (3.3+):**
+```ardent
+Continue   — skips to next iteration of innermost loop
 ```
 
 **For-Each Loop:**
