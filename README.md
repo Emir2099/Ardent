@@ -996,7 +996,7 @@ Debug output is now **silent by default** for clean algorithm execution.
 
 ## 🖋️ Ardent 3.4 — The Voice of the Traveler
 
-> "Everything said will be heard, nothing goes in vain"
+> "And so the traveler spoke, and the realm listened."
 
 Ardent 3.4 introduces user input capabilities, allowing programs to read data interactively.
 
