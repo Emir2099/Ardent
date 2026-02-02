@@ -24,7 +24,9 @@ enum class TokenType {
     // Comments (Ardent 3.2)
     COMMENT, DOC_COMMENT,
     // Block control flow (Ardent 3.3)
-    OTHERWISE, BECOME, CEASE, DONE, CONTINUE
+    OTHERWISE, BECOME, CEASE, DONE, CONTINUE,
+    // User Input (Ardent 3.4)
+    HEARD, ASKED, FROM_TRAVELER, AS_WHOLE, AS_FRACTION, AS_TRUTH, AS_PHRASE, ORDER_OF, TOME_OF
 };
 
 inline std::string tokenTypeToString(TokenType type) {
@@ -123,6 +125,16 @@ inline std::string tokenTypeToString(TokenType type) {
         case TokenType::CEASE: return "CEASE";
         case TokenType::DONE: return "DONE";
         case TokenType::CONTINUE: return "CONTINUE";
+        // User Input (3.4)
+        case TokenType::HEARD: return "HEARD";
+        case TokenType::ASKED: return "ASKED";
+        case TokenType::FROM_TRAVELER: return "FROM_TRAVELER";
+        case TokenType::AS_WHOLE: return "AS_WHOLE";
+        case TokenType::AS_FRACTION: return "AS_FRACTION";
+        case TokenType::AS_TRUTH: return "AS_TRUTH";
+        case TokenType::AS_PHRASE: return "AS_PHRASE";
+        case TokenType::ORDER_OF: return "ORDER_OF";
+        case TokenType::TOME_OF: return "TOME_OF";
         default: return "UNKNOWN";
     }
 }

@@ -484,6 +484,32 @@ public:
     WhileStatement(std::shared_ptr<ASTNode> cond, std::shared_ptr<BlockStatement> bodyBlock)
         : condition(std::move(cond)), body(std::move(bodyBlock)) {}
 };
+
+// ============================================================================
+// USER INPUT NODES (3.4 The Voice of the Traveler)
+// ============================================================================
+
+// Input type kinds for runtime parsing
+enum class InputTypeKind { 
+    Phrase,     // Default - returns string
+    Whole,      // Parse as integer
+    Fraction,   // Parse as float (future)
+    Truth,      // Parse as boolean
+    OrderWhole, // Parse space-separated integers
+    OrderPhrase // Parse space-separated strings
+};
+
+// Input expression: "heard [from the traveler]" or "asked [as type] [prompt]"
+// Can appear as RHS in variable declarations or inline in expressions
+class InputExpression : public ASTNode {
+public:
+    InputTypeKind inputType;              // Type to parse input as
+    std::string prompt;                   // Optional prompt string (empty if none)
+    bool hasPrompt = false;               // True if user specified a prompt
+    
+    InputExpression(InputTypeKind type = InputTypeKind::Phrase, std::string promptStr = "")
+        : inputType(type), prompt(std::move(promptStr)), hasPrompt(!prompt.empty()) {}
+};
     
     
 

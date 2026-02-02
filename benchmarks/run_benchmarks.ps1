@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host ""
 Write-Host "===============================================================" -ForegroundColor Cyan
-Write-Host "           Ardent 3.2 Performance Benchmark Suite              " -ForegroundColor Cyan
+Write-Host "           Ardent 3.3 Performance Benchmark Suite              " -ForegroundColor Cyan
 Write-Host "===============================================================" -ForegroundColor Cyan
 Write-Host ""
 

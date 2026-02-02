@@ -70,6 +70,9 @@ private:
     std::shared_ptr<BlockStatement> parseBlock();
     std::shared_ptr<ASTNode> parseWhileStatement();  // New-style: Whilst condition: ... Done
     
+    // User Input (3.4 The Voice of the Traveler)
+    std::shared_ptr<ASTNode> parseInputExpression();
+    
 public:
     Parser(std::vector<Token> tokens);
     Parser(std::vector<Token> tokens, Arena* arena);

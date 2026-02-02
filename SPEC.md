@@ -1,8 +1,8 @@
-# Ardent 3.3 Language Specification
+# Ardent 3.4 Language Specification
 
 **Status:** FROZEN  
-**Version:** 3.3.0  
-**Date:** 2026-01-03  
+**Version:** 3.4.0  
+**Date:** 2026-02-04  
 
 > *"Where code becomes poetry, and logic sings in verse."*
 
@@ -62,6 +62,7 @@ The following are reserved and cannot be used as identifiers:
 **I/O:**
 - `Inscribe`, `upon`, `reading`, `from`, `Banish`
 - `Let`, `proclaimed`
+- `heard`, `asked` (user input, 3.4+)
 
 **Streams (2.4+):**
 - `scribe`, `bound`, `to`, `Write`, `verse`, `into`
@@ -504,9 +505,71 @@ Close the scribe <name>
 
 ---
 
-## 10. Native Interface
+## 10. User Input (3.4+)
 
-### 10.1 Spirit Invocation
+### 10.1 Basic Input
+
+Read a string from standard input:
+
+```ardent
+Let it be known, a phrase named name is of heard.
+```
+
+**Extended form:**
+```ardent
+Let it be known, a phrase named name is of heard from the traveler.
+```
+
+### 10.2 Typed Input
+
+Parse input as a specific type:
+
+```ardent
+Let it be known, a number named age is of heard as whole.
+Let it be known, a truth named proceed is of heard as truth.
+Let it be known, a phrase named text is of heard as phrase.
+```
+
+**Type Runes:**
+| Rune | Accepts | Returns |
+|------|---------|---------|
+| `whole` | Integer strings like "42", "-7" | Integer |
+| `truth` | "True", "False", "yes", "no", "1", "0" | Boolean |
+| `phrase` | Any text | String |
+| `fraction` | Numeric strings (future) | Number |
+
+### 10.3 Prompted Input
+
+Display a prompt before reading:
+
+```ardent
+Let it be known, a phrase named name is of asked "What is your name? ".
+Let it be known, a number named age is of asked as whole "How old are you? ".
+```
+
+### 10.4 Order Input
+
+Read space-separated values into an order:
+
+```ardent
+Let it be known, an order named nums is of heard as order of whole.
+```
+
+Input: `1 2 3 4 5`  
+Result: `[1, 2, 3, 4, 5]`
+
+### 10.5 Input Error Handling
+
+Type parsing errors raise a curse:
+```
+TypeError: Expected a whole number, but the traveler spoke 'abc'
+```
+
+---
+
+## 11. Native Interface
+
+### 11.1 Spirit Invocation
 
 ```ardent
 Invoke the spirit of <module>.<function> upon <args>
@@ -527,9 +590,9 @@ Invoke the spirit of <module>.<function> upon <args>
 
 ---
 
-## 11. Async Foundation (2.4+)
+## 12. Async Foundation (2.4+)
 
-### 11.1 Await Syntax
+### 12.1 Await Syntax
 
 ```ardent
 Await the omen of <expression>
@@ -540,7 +603,7 @@ Await the omen of <expression>
 
 ---
 
-## 12. Reserved for Future
+## 13. Reserved for Future
 
 The following constructs are reserved and MUST NOT be used:
 
@@ -552,7 +615,7 @@ The following constructs are reserved and MUST NOT be used:
 
 ---
 
-## 13. Deprecated Constructs
+## 14. Deprecated Constructs
 
 The following are deprecated and will be removed in 4.0:
 
@@ -563,9 +626,9 @@ The following are deprecated and will be removed in 4.0:
 
 ---
 
-## 14. ABI Contract (AOT)
+## 15. ABI Contract (AOT)
 
-### 14.1 ArdentValue Structure
+### 15.1 ArdentValue Structure
 
 ```c
 struct ArdentValue {
@@ -579,7 +642,7 @@ struct ArdentValue {
 };
 ```
 
-### 14.2 ArdentValueLL (LLVM ABI)
+### 15.2 ArdentValueLL (LLVM ABI)
 
 ```c
 struct ArdentValueLL {
@@ -591,7 +654,7 @@ struct ArdentValueLL {
 };
 ```
 
-### 14.3 Runtime Functions
+### 15.3 Runtime Functions
 
 All runtime functions use C linkage (`extern "C"`):
 
@@ -608,7 +671,7 @@ int64_t ardent_rt_div_i64(int64_t a, int64_t b);
 
 ---
 
-## 15. Conformance
+## 16. Conformance
 
 An implementation is **conformant** if:
 1. It accepts all valid programs per this spec

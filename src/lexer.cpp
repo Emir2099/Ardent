@@ -616,6 +616,25 @@ std::vector<Token> Lexer::tokenize() {
             if (currentPos < input.length()) currentChar = input[currentPos];
             else currentChar = '\0';
         }
+        // User Input (Ardent 3.4)
+        else if (input.substr(currentPos, 22) == "heard from the traveler") {
+            tokens.push_back(Token(TokenType::HEARD, "heard from the traveler"));
+            currentPos += 22;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 5) == "heard") {
+            tokens.push_back(Token(TokenType::HEARD, "heard"));
+            currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
+        else if (input.substr(currentPos, 5) == "asked") {
+            tokens.push_back(Token(TokenType::ASKED, "asked"));
+            currentPos += 5;
+            if (currentPos < input.length()) currentChar = input[currentPos];
+            else currentChar = '\0';
+        }
         // Single characters
         else if (currentChar == '"') {
             tokens.push_back(parseString());

@@ -211,6 +211,14 @@ std::shared_ptr<ASTNode> Parser::parseCast() {
 std::shared_ptr<ASTNode> Parser::parsePrimary() {
     Token token = peek();
     std::shared_ptr<ASTNode> cur;
+    // User Input (3.4): "heard" or "asked" as expression
+    if (token.type == TokenType::HEARD) {
+        advance();
+        return parseInputExpression();
+    } else if (token.type == TokenType::ASKED) {
+        advance();
+        return parseInputExpression();
+    }
     // Special Chronicle existence pattern: the scroll "path" existeth
     if (token.type == TokenType::IDENTIFIER && token.value == "the") {
         size_t save = current;
@@ -560,11 +568,17 @@ std::shared_ptr<ASTNode> Parser::parseVariableDeclaration() {
     }
     
     consume(TokenType::IS_OF, "Expected 'is of' after variable name");
-    // Accept either a literal (STRING/BOOLEAN/NUMBER), a Chronicle read, or a full expression
+    // Accept either a literal (STRING/BOOLEAN/NUMBER), a Chronicle read, input expression, or a full expression
     std::shared_ptr<ASTNode> rhsNode;
     bool simpleLiteral = false;
     Token value(TokenType::INVALID, "");
-    if (match(TokenType::READING_FROM) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "reading" && (advance(), !isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "from" && (advance(), true)))) {
+    // User Input (3.4): "heard [from the traveler]" or "heard as type" or "asked ..."
+    if (match(TokenType::HEARD)) {
+        rhsNode = parseInputExpression();
+    } else if (match(TokenType::ASKED)) {
+        rhsNode = parseInputExpression();
+    }
+    else if (match(TokenType::READING_FROM) || (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "reading" && (advance(), !isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "from" && (advance(), true)))) {
     Token pathTok = consume(TokenType::STRING, "Expected path after 'reading from'");
     std::vector<std::shared_ptr<ASTNode>> args; args.push_back(node<Expression>(pathTok));
     rhsNode = node<NativeInvocation>("chronicles.read", args);
@@ -1862,4 +1876,74 @@ std::shared_ptr<ASTNode> Parser::parseWhileStatement() {
     
     auto body = node<BlockStatement>(statements);
     return node<WhileStatement>(condition, body);
+}
+
+// ============================================================================
+// USER INPUT PARSING (3.4 The Voice of the Traveler)
+// ============================================================================
+
+// Parse input expression:
+// - "heard from the traveler" -> phrase input, no prompt
+// - "heard" -> phrase input, no prompt (short form)
+// - "heard as whole" -> integer input
+// - "heard as fraction" -> float input (future)
+// - "heard as truth" -> boolean input
+// - "heard as phrase" -> string input (explicit)
+// - "asked \"prompt\"" -> phrase input with prompt
+// - "asked as whole \"prompt\"" -> typed input with prompt
+// - "asked as whole:\n    \"prompt\"" -> typed input with block prompt
+std::shared_ptr<ASTNode> Parser::parseInputExpression() {
+    // HEARD or ASKED token already consumed by caller
+    // Determine input type based on what follows
+    
+    InputTypeKind inputType = InputTypeKind::Phrase; // Default
+    std::string prompt;
+    
+    // Check for type specifier: "as <type>"
+    // We look for AS token followed by a type identifier
+    if (!isAtEnd() && peek().type == TokenType::AS) {
+        advance(); // consume 'as'
+        if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+            std::string typeWord = peek().value;
+            advance();
+            if (typeWord == "whole") {
+                inputType = InputTypeKind::Whole;
+            } else if (typeWord == "fraction") {
+                inputType = InputTypeKind::Fraction;
+            } else if (typeWord == "truth") {
+                inputType = InputTypeKind::Truth;
+            } else if (typeWord == "phrase") {
+                inputType = InputTypeKind::Phrase;
+            } else if (typeWord == "order") {
+                // "as order of <elemtype>"
+                if (!isAtEnd() && peek().type == TokenType::IDENTIFIER && peek().value == "of") {
+                    advance(); // consume 'of'
+                    if (!isAtEnd() && peek().type == TokenType::IDENTIFIER) {
+                        std::string elemType = peek().value;
+                        advance();
+                        if (elemType == "whole") {
+                            inputType = InputTypeKind::OrderWhole;
+                        } else {
+                            inputType = InputTypeKind::OrderPhrase;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Check for prompt - can be inline string or block with colon
+    if (!isAtEnd() && peek().type == TokenType::STRING) {
+        prompt = peek().value;
+        advance();
+    } else if (!isAtEnd() && peek().type == TokenType::COLON) {
+        advance(); // consume ':'
+        // Next line should have the prompt string
+        if (!isAtEnd() && peek().type == TokenType::STRING) {
+            prompt = peek().value;
+            advance();
+        }
+    }
+    
+    return node<InputExpression>(inputType, prompt);
 }

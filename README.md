@@ -72,6 +72,7 @@ All is well in Middle Code.
 | Loop | Whilst the sun doth rise … | while / for |
 | Conditional | Should the fates decree … | if |
 | Exception | Try / Catch the curse / Finally | try / catch / finally |
+| User Input | heard / asked | input / readline |
 | File I/O | Inscribe upon …, reading from …, Banish … | open/write/read/delete |
 | Import | From the scroll of … | import/module |
 | Native Bridge | Invoke the spirit of … | FFI / native call |
@@ -990,6 +991,43 @@ Note: Output: [ 11, 12, 22, 25, 34, 64, 90 ]
 | `--verbose` / `-v` | Enable debug output (variable assignments, etc.) |
 
 Debug output is now **silent by default** for clean algorithm execution.
+
+---
+
+## 🖋️ User Input (3.4+)
+
+Ardent 3.4 introduces user input capabilities, allowing programs to read data interactively.
+
+**Basic Input:**
+
+```ardent
+Let it be known, a phrase named name is of heard.
+Let it be proclaimed: "Hello, " + name
+```
+
+**Typed Input:**
+
+```ardent
+Note: Read an integer
+Let it be known, a number named age is of heard as whole.
+
+Note: Read a boolean (accepts True/False/yes/no/1/0)
+Let it be known, a truth named proceed is of heard as truth.
+```
+
+**Prompted Input:**
+
+```ardent
+Let it be known, a phrase named name is of asked "What is your name? ".
+Let it be known, a number named age is of asked as whole "How old are you? ".
+```
+
+**Order Input (space-separated):**
+
+```ardent
+Let it be known, an order named nums is of asked as order of whole "Enter numbers: ".
+Note: Input "1 2 3 4 5" results in [1, 2, 3, 4, 5]
+```
 
 ---
 

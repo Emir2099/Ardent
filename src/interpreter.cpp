@@ -965,6 +965,90 @@ Interpreter::Value Interpreter::evaluateValue(std::shared_ptr<ASTNode> expr) {
         for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(result[i]);
         return Order{n, buf};
     }
+    // User Input (3.4): "heard" or "asked" expression - reads from stdin
+    if (auto input = std::dynamic_pointer_cast<InputExpression>(expr)) {
+        // Print prompt if one was provided
+        if (input->hasPrompt && !input->prompt.empty()) {
+            std::cout << input->prompt << std::flush;
+        }
+        
+        // Read a line from stdin
+        std::string line;
+        if (!std::getline(std::cin, line)) {
+            // EOF or error
+            return Phrase::make("", 0, activeArena());
+        }
+        
+        // Parse based on input type
+        switch (input->inputType) {
+            case InputTypeKind::Whole: {
+                try {
+                    int val = std::stoi(line);
+                    return val;
+                } catch (...) {
+                    std::cerr << "TypeError: Expected a whole number, but the traveler spoke '" << line << "'" << std::endl;
+                    return 0;
+                }
+            }
+            case InputTypeKind::Fraction: {
+                // Future: parse as double
+                try {
+                    int val = std::stoi(line);
+                    return val;
+                } catch (...) {
+                    std::cerr << "TypeError: Expected a fraction, but the traveler spoke '" << line << "'" << std::endl;
+                    return 0;
+                }
+            }
+            case InputTypeKind::Truth: {
+                // Accept "True", "true", "False", "false", "1", "0", "yes", "no"
+                std::string lower = line;
+                for (auto& c : lower) c = std::tolower(c);
+                if (lower == "true" || lower == "1" || lower == "yes") {
+                    return true;
+                } else if (lower == "false" || lower == "0" || lower == "no") {
+                    return false;
+                } else {
+                    std::cerr << "TypeError: Expected truth (True/False), but the traveler spoke '" << line << "'" << std::endl;
+                    return false;
+                }
+            }
+            case InputTypeKind::OrderWhole: {
+                // Parse space-separated integers
+                std::vector<SimpleValue> values;
+                std::istringstream iss(line);
+                int num;
+                while (iss >> num) {
+                    values.push_back(num);
+                }
+                size_t n = values.size();
+                void* mem = activeArena().alloc(sizeof(SimpleValue) * n, alignof(SimpleValue));
+                auto* buf = reinterpret_cast<SimpleValue*>(mem);
+                for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(values[i]);
+                return Order{n, buf};
+            }
+            case InputTypeKind::OrderPhrase: {
+                // Parse space-separated strings
+                std::vector<SimpleValue> values;
+                std::istringstream iss(line);
+                std::string word;
+                while (iss >> word) {
+                    values.push_back(word);
+                }
+                size_t n = values.size();
+                void* mem = activeArena().alloc(sizeof(SimpleValue) * n, alignof(SimpleValue));
+                auto* buf = reinterpret_cast<SimpleValue*>(mem);
+                for (size_t i = 0; i < n; ++i) new (&buf[i]) SimpleValue(values[i]);
+                return Order{n, buf};
+            }
+            case InputTypeKind::Phrase:
+            default: {
+                // Return as string/phrase
+                Phrase p = Phrase::make(line.data(), line.size(), activeArena());
+                return p;
+            }
+        }
+    }
     // Unknown node type
     return 0;
 }
