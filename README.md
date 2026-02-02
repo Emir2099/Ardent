@@ -994,7 +994,9 @@ Debug output is now **silent by default** for clean algorithm execution.
 
 ---
 
-## 🖋️ User Input (3.4+)
+## 🖋️ Ardent 3.4 — Let it be heard
+
+> "Everything said will be heard, nothing goes in vain"
 
 Ardent 3.4 introduces user input capabilities, allowing programs to read data interactively.
 
