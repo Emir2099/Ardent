@@ -994,7 +994,7 @@ Debug output is now **silent by default** for clean algorithm execution.
 
 ---
 
-## 🖋️ Ardent 3.4 — Let it be heard
+## 🖋️ Ardent 3.4 — The Voice of the Traveler
 
 > "Everything said will be heard, nothing goes in vain"
 
